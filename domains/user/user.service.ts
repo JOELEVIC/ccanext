@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import type { PrismaClient } from "@prisma/client";
 import { UserRepository } from "./user.repository";
 import type {
@@ -30,7 +30,7 @@ export class UserService {
     );
     if (existingUsername) throw new ValidationError("Username already in use");
 
-    const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
+    const passwordHash = bcrypt.hashSync(data.password, SALT_ROUNDS);
 
     const user = await this.userRepository.create({
       email: data.email,
@@ -61,7 +61,7 @@ export class UserService {
     const user = await this.userRepository.findByEmail(data.email);
     if (!user) throw new AuthenticationError("Invalid email or password");
 
-    const isPasswordValid = await bcrypt.compare(
+    const isPasswordValid = bcrypt.compareSync(
       data.password,
       user.passwordHash
     );

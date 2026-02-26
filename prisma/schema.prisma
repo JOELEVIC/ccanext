@@ -1,0 +1,200 @@
+// Cameroon Chess Academy Platform - Database Schema
+// Phase 1 MVP: User auth, games, tournaments, learning, schools
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER & IDENTITY DOMAIN
+// ============================================================================
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String
+  role          UserRole
+  schoolId      String?
+  school        School?   @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  profile       Profile?
+  gamesAsWhite  Game[]    @relation("WhitePlayer")
+  gamesAsBlack  Game[]    @relation("BlackPlayer")
+  rating        Int       @default(1200)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tournamentParticipants TournamentParticipant[]
+
+  @@index([email])
+  @@index([username])
+  @@index([schoolId])
+  @@map("users")
+}
+
+enum UserRole {
+  STUDENT
+  COACH
+  SCHOOL_ADMIN
+  REGIONAL_ADMIN
+  NATIONAL_ADMIN
+  VOLUNTEER
+
+  @@map("user_role")
+}
+
+model Profile {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName   String
+  lastName    String
+  dateOfBirth DateTime?
+  country     String    @default("CM")
+  badges      Badge[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("profiles")
+}
+
+// ============================================================================
+// INSTITUTION DOMAIN
+// ============================================================================
+
+model School {
+  id          String       @id @default(uuid())
+  name        String
+  region      String
+  students    User[]
+  tournaments Tournament[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([region])
+  @@map("schools")
+}
+
+// ============================================================================
+// GAME DOMAIN
+// ============================================================================
+
+model Game {
+  id           String       @id @default(uuid())
+  whiteId      String
+  blackId      String
+  white        User         @relation("WhitePlayer", fields: [whiteId], references: [id], onDelete: Cascade)
+  black        User         @relation("BlackPlayer", fields: [blackId], references: [id], onDelete: Cascade)
+  moves        String       @db.Text // PGN or JSON format
+  result       GameResult?
+  status       GameStatus   @default(PENDING)
+  timeControl  String       // e.g., "10+0", "30+0"
+  tournamentId String?
+  tournament   Tournament?  @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([whiteId])
+  @@index([blackId])
+  @@index([status])
+  @@index([tournamentId])
+  @@map("games")
+}
+
+enum GameStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  ABANDONED
+
+  @@map("game_status")
+}
+
+enum GameResult {
+  WHITE_WIN
+  BLACK_WIN
+  DRAW
+  STALEMATE
+
+  @@map("game_result")
+}
+
+// ============================================================================
+// TOURNAMENT DOMAIN
+// ============================================================================
+
+model Tournament {
+  id           String                  @id @default(uuid())
+  name         String
+  schoolId     String
+  school       School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  startDate    DateTime
+  endDate      DateTime?
+  status       TournamentStatus        @default(UPCOMING)
+  games        Game[]
+  participants TournamentParticipant[]
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  @@index([schoolId])
+  @@index([status])
+  @@map("tournaments")
+}
+
+enum TournamentStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+  CANCELLED
+
+  @@map("tournament_status")
+}
+
+model TournamentParticipant {
+  id           String     @id @default(uuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score        Float      @default(0)
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+  @@index([tournamentId])
+  @@index([userId])
+  @@map("tournament_participants")
+}
+
+// ============================================================================
+// LEARNING DOMAIN
+// ============================================================================
+
+model Puzzle {
+  id         String   @id @default(uuid())
+  fen        String   // Chess position in FEN notation
+  solution   String   // Move sequence (e.g., "e2e4 e7e5")
+  difficulty Int      @default(1200)
+  theme      String[] // e.g., ["fork", "pin", "checkmate"]
+  createdAt  DateTime @default(now())
+
+  @@index([difficulty])
+  @@map("puzzles")
+}
+
+model Badge {
+  id          String   @id @default(uuid())
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name        String
+  description String
+  earnedAt    DateTime @default(now())
+
+  @@index([profileId])
+  @@map("badges")
+}

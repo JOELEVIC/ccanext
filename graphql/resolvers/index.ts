@@ -21,9 +21,40 @@ const dateTimeScalar = new GraphQLScalarType({
   },
 });
 
+function redactDbUrl(url: string): string {
+  try {
+    return url.replace(/^([^:]+:\/\/[^:]+):([^@]+)@/, "$1:***@");
+  } catch {
+    return "[invalid]";
+  }
+}
+
+function debugDbResolver() {
+  const url = process.env.DATABASE_URL ?? "";
+  let host = "";
+  let user = "";
+  try {
+    const match = url.match(/^postgresql:\/\/([^:]+):[^@]+@([^/]+)/);
+    if (match) {
+      user = match[1];
+      host = match[2];
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    databaseUrlRedacted: url ? redactDbUrl(url) : "(not set)",
+    host: host || "(parse failed)",
+    user: user || "(parse failed)",
+    isPooler: host.includes("pooler.supabase.com"),
+    vercel: !!process.env.VERCEL,
+  };
+}
+
 export const resolvers = {
   DateTime: dateTimeScalar,
   Query: {
+    debugDb: debugDbResolver,
     ...userResolvers.Query,
     ...gameResolvers.Query,
     ...tournamentResolvers.Query,

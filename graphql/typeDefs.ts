@@ -183,7 +183,16 @@ export const typeDefs = `#graphql
     search: String
   }
 
+  type DebugDbInfo {
+    databaseUrlRedacted: String!
+    host: String!
+    user: String!
+    isPooler: Boolean!
+    vercel: Boolean!
+  }
+
   type Query {
+    debugDb: DebugDbInfo!
     me: User
     user(id: ID!): User
     users(filters: UserFilters): [User!]!

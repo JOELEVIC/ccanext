@@ -9,11 +9,15 @@ import {
 } from "@/utils/types";
 import { UserService } from "../user/user.service";
 
+const XP_WIN = 20;
+const XP_DRAW = 10;
+const XP_LOSS = 5;
+
 export class GameService {
   private gameRepository: GameRepository;
   private userService: UserService;
 
-  constructor(prisma: PrismaClient) {
+  constructor(private prisma: PrismaClient) {
     this.gameRepository = new GameRepository(prisma);
     this.userService = new UserService(prisma);
   }
@@ -152,5 +156,52 @@ export class GameService {
       this.userService.updateUserRating(game.whiteId, whiteNewRating),
       this.userService.updateUserRating(game.blackId, blackNewRating),
     ]);
+  }
+
+  /** Award XP for a completed game once per player. Returns xpAwarded (0 if already awarded). */
+  async recordGameCompleted(
+    gameId: string,
+    userId: string
+  ): Promise<{ xpAwarded: number }> {
+    const game = await this.gameRepository.findById(gameId);
+    if (!game) throw new NotFoundError("Game not found");
+    if (game.status !== GameStatus.COMPLETED)
+      throw new ValidationError("Game is not completed");
+    if (userId !== game.whiteId && userId !== game.blackId)
+      throw new AuthorizationError("You are not a participant in this game");
+
+    const existing = await this.prisma.gameXpAward.findUnique({
+      where: { gameId_userId: { gameId, userId } },
+    });
+    if (existing) return { xpAwarded: 0 };
+
+    const isWhite = userId === game.whiteId;
+    const xp =
+      !game.result
+        ? XP_DRAW
+        : (game.result === GameResult.WHITE_WIN && isWhite) ||
+            (game.result === GameResult.BLACK_WIN && !isWhite)
+          ? XP_WIN
+          : XP_LOSS;
+
+    const profile = await this.prisma.profile.findFirst({
+      where: { userId },
+    });
+    if (profile) {
+      await this.prisma.$transaction([
+        this.prisma.profile.update({
+          where: { id: profile.id },
+          data: { xp: profile.xp + xp },
+        }),
+        this.prisma.gameXpAward.create({
+          data: { gameId, userId },
+        }),
+      ]);
+    } else {
+      await this.prisma.gameXpAward.create({
+        data: { gameId, userId },
+      });
+    }
+    return { xpAwarded: xp };
   }
 }

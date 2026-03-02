@@ -41,10 +41,10 @@ export const learningResolvers = {
           extensions: { code: "UNAUTHENTICATED" },
         });
       }
-      return context.services.learningService.checkSolution({
-        puzzleId,
-        userSolution: solution,
-      });
+      return context.services.learningService.checkSolution(
+        { puzzleId, userSolution: solution },
+        context.user.userId
+      );
     },
   },
 };

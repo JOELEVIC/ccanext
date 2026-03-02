@@ -89,6 +89,9 @@ export const userResolvers = {
   },
 
   Profile: {
+    level: (parent: { xp: number }) => {
+      return 1 + Math.floor((parent.xp ?? 0) / 100);
+    },
     badges: async (
       parent: { id: string },
       _: unknown,

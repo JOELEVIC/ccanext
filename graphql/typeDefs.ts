@@ -50,6 +50,10 @@ export const typeDefs = `#graphql
     lastName: String!
     dateOfBirth: DateTime
     country: String!
+    xp: Int!
+    level: Int!
+    puzzleStreakCount: Int!
+    lastPuzzleSolvedAt: DateTime
     badges: [Badge!]!
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -134,6 +138,12 @@ export const typeDefs = `#graphql
   type PuzzleSolutionResult {
     correct: Boolean!
     solution: String!
+    xpAwarded: Int
+    streakAfter: Int
+  }
+
+  type GameXpResult {
+    xpAwarded: Int!
   }
 
   input RegisterInput {
@@ -224,6 +234,7 @@ export const typeDefs = `#graphql
     createGame(input: CreateGameInput!): Game!
     makeMove(gameId: ID!, move: String!): Game!
     resignGame(gameId: ID!): Game!
+    recordGameCompleted(gameId: ID!): GameXpResult!
 
     createTournament(input: CreateTournamentInput!): Tournament!
     joinTournament(tournamentId: ID!): Tournament!

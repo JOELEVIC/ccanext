@@ -39,14 +39,80 @@ export class LearningService {
     return this.learningRepository.createPuzzle(data);
   }
 
+  /** XP per correct solve: base 10 + bonus from difficulty (e.g. +1 per 200 rating) */
+  private static xpForPuzzle(difficulty: number): number {
+    return 10 + Math.floor(difficulty / 200);
+  }
+
+  /** Compare dates by calendar day (UTC). */
+  private static isSameDay(a: Date | null, b: Date): boolean {
+    if (!a) return false;
+    return (
+      a.getUTCFullYear() === b.getUTCFullYear() &&
+      a.getUTCMonth() === b.getUTCMonth() &&
+      a.getUTCDate() === b.getUTCDate()
+    );
+  }
+
+  /** Returns true if a is the day before b (UTC). */
+  private static isYesterday(a: Date | null, b: Date): boolean {
+    if (!a) return false;
+    const prev = new Date(b);
+    prev.setUTCDate(prev.getUTCDate() - 1);
+    return LearningService.isSameDay(a, prev);
+  }
+
   async checkSolution(
-    data: CheckSolutionDTO
-  ): Promise<{ correct: boolean; solution: string }> {
+    data: CheckSolutionDTO,
+    userId: string | null
+  ): Promise<{
+    correct: boolean;
+    solution: string;
+    xpAwarded?: number;
+    streakAfter?: number;
+  }> {
     const puzzle = await this.getPuzzleById(data.puzzleId);
     const normalizedSolution = puzzle.solution.trim().toLowerCase();
     const normalizedUserSolution = data.userSolution.trim().toLowerCase();
     const correct = normalizedSolution === normalizedUserSolution;
-    return { correct, solution: puzzle.solution };
+
+    let xpAwarded: number | undefined;
+    let streakAfter: number | undefined;
+
+    if (correct && userId) {
+      const profile = await this.prisma.profile.findFirst({
+        where: { userId },
+      });
+      if (profile) {
+        const now = new Date();
+        const xpGain = LearningService.xpForPuzzle(puzzle.difficulty);
+        let newStreak = profile.puzzleStreakCount;
+        if (LearningService.isSameDay(profile.lastPuzzleSolvedAt, now)) {
+          // Already solved today: no streak change, still award XP (allow multiple puzzles per day)
+        } else if (LearningService.isYesterday(profile.lastPuzzleSolvedAt, now)) {
+          newStreak = profile.puzzleStreakCount + 1;
+        } else {
+          newStreak = 1;
+        }
+        await this.prisma.profile.update({
+          where: { id: profile.id },
+          data: {
+            xp: profile.xp + xpGain,
+            lastPuzzleSolvedAt: now,
+            puzzleStreakCount: newStreak,
+          },
+        });
+        xpAwarded = xpGain;
+        streakAfter = newStreak;
+      }
+    }
+
+    return {
+      correct,
+      solution: puzzle.solution,
+      xpAwarded,
+      streakAfter,
+    };
   }
 
   async awardBadge(data: BadgeDTO) {

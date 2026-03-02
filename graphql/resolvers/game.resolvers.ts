@@ -88,6 +88,22 @@ export const gameResolvers = {
         context.user.userId
       );
     },
+
+    recordGameCompleted: async (
+      _: unknown,
+      { gameId }: { gameId: string },
+      context: GraphQLContextWithServices
+    ) => {
+      if (!context.user) {
+        throw new GraphQLError("Not authenticated", {
+          extensions: { code: "UNAUTHENTICATED" },
+        });
+      }
+      return context.services.gameService.recordGameCompleted(
+        gameId,
+        context.user.userId
+      );
+    },
   },
 
   Game: {

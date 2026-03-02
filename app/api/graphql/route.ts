@@ -11,7 +11,7 @@ const { handleRequest } = createYoga({
   fetchAPI: { Request, Response },
   context: async ({ request }) => buildContext(request),
   cors: {
-    origin: config.cors.origin,
+    origin: config.cors.origin.split(",").map((o) => o.trim()).filter(Boolean),
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
   },

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { redactDatabaseUrl } from "@/utils/redact";
 
 // On Vercel, NODE_ENV is set by the platform; default to production so we never run as development
 const defaultNodeEnv = process.env.VERCEL ? "production" : "development";
@@ -30,6 +31,11 @@ function parseEnv() {
 }
 
 const env = parseEnv();
+
+// On Vercel, log redacted DATABASE_URL once so you can verify the correct URL is used (no password).
+if (process.env.VERCEL && env.DATABASE_URL) {
+  console.info("DATABASE_URL (redacted):", redactDatabaseUrl(env.DATABASE_URL));
+}
 
 export const config = {
   nodeEnv: env.NODE_ENV,

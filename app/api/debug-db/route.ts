@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
-import { config } from "@/config/env";
-import { redactDatabaseUrl } from "@/utils/redact";
+
+function redact(url: string): string {
+  try {
+    return url.replace(/^([^:]+:\/\/[^:]+):([^@]+)@/, "$1:***@");
+  } catch {
+    return "[invalid]";
+  }
+}
 
 /**
- * GET /api/debug-db — Returns redacted DATABASE_URL info to verify Vercel env.
- * Only available when VERCEL is set (or in development). Remove or restrict in production.
+ * GET /api/debug-db — Returns redacted DATABASE_URL to verify Vercel env.
+ * Remove or restrict when done debugging.
  */
 export async function GET() {
-  const url = config.database.url;
+  const url = process.env.DATABASE_URL ?? "";
   let host = "";
   let user = "";
   try {
@@ -20,9 +26,10 @@ export async function GET() {
     // ignore
   }
   return NextResponse.json({
-    databaseUrlRedacted: redactDatabaseUrl(url),
-    host,
-    user,
+    ok: true,
+    databaseUrlRedacted: url ? redact(url) : "(not set)",
+    host: host || "(parse failed)",
+    user: user || "(parse failed)",
     isPooler: host.includes("pooler.supabase.com"),
     vercel: !!process.env.VERCEL,
   });

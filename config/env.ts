@@ -1,8 +1,10 @@
 import "dotenv/config";
 import { z } from "zod";
 
+// On Vercel, NODE_ENV is set by the platform; default to production so we never run as development
+const defaultNodeEnv = process.env.VERCEL ? "production" : "development";
 const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z.enum(["development", "test", "production"]).default(defaultNodeEnv),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),

@@ -49,16 +49,19 @@ enum UserRole {
 }
 
 model Profile {
-  id          String    @id @default(uuid())
-  userId      String    @unique
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  firstName   String
-  lastName    String
-  dateOfBirth DateTime?
-  country     String    @default("CM")
-  badges      Badge[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                   String    @id @default(uuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName            String
+  lastName             String
+  dateOfBirth          DateTime?
+  country              String    @default("CM")
+  xp                   Int       @default(0)
+  lastPuzzleSolvedAt   DateTime?
+  puzzleStreakCount    Int       @default(0)
+  badges               Badge[]
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([userId])
   @@map("profiles")
@@ -86,25 +89,39 @@ model School {
 // ============================================================================
 
 model Game {
-  id           String       @id @default(uuid())
-  whiteId      String
-  blackId      String
-  white        User         @relation("WhitePlayer", fields: [whiteId], references: [id], onDelete: Cascade)
-  black        User         @relation("BlackPlayer", fields: [blackId], references: [id], onDelete: Cascade)
-  moves        String       @db.Text // PGN or JSON format
-  result       GameResult?
-  status       GameStatus   @default(PENDING)
-  timeControl  String       // e.g., "10+0", "30+0"
-  tournamentId String?
-  tournament   Tournament?  @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id             String        @id @default(uuid())
+  whiteId        String
+  blackId        String
+  white          User          @relation("WhitePlayer", fields: [whiteId], references: [id], onDelete: Cascade)
+  black          User          @relation("BlackPlayer", fields: [blackId], references: [id], onDelete: Cascade)
+  moves          String        @db.Text // PGN or JSON format
+  result         GameResult?
+  status         GameStatus    @default(PENDING)
+  timeControl    String        // e.g., "10+0", "30+0"
+  tournamentId   String?
+  tournament     Tournament?   @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  gameXpAwards   GameXpAward[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([whiteId])
   @@index([blackId])
   @@index([status])
   @@index([tournamentId])
   @@map("games")
+}
+
+model GameXpAward {
+  id        String   @id @default(uuid())
+  gameId    String
+  userId    String
+  awardedAt DateTime @default(now())
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, userId])
+  @@index([gameId])
+  @@index([userId])
+  @@map("game_xp_awards")
 }
 
 enum GameStatus {

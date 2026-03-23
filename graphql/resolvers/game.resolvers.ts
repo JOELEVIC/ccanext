@@ -110,5 +110,11 @@ export const gameResolvers = {
     white: (parent: { white?: unknown }) => parent.white,
     black: (parent: { black?: unknown }) => parent.black,
     tournament: (parent: { tournament?: unknown }) => parent.tournament,
+    analysisJson: (parent: { analysisJson?: unknown }) =>
+      parent.analysisJson == null
+        ? null
+        : typeof parent.analysisJson === "string"
+          ? parent.analysisJson
+          : JSON.stringify(parent.analysisJson),
   },
 };

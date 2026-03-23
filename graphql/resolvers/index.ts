@@ -4,6 +4,7 @@ import { gameResolvers } from "./game.resolvers";
 import { tournamentResolvers } from "./tournament.resolvers";
 import { learningResolvers } from "./learning.resolvers";
 import { schoolResolvers } from "./school.resolvers";
+import { chessProResolvers } from "./chessPro.resolvers";
 
 const dateTimeScalar = new GraphQLScalarType({
   name: "DateTime",
@@ -60,6 +61,7 @@ export const resolvers = {
     ...tournamentResolvers.Query,
     ...learningResolvers.Query,
     ...schoolResolvers.Query,
+    ...chessProResolvers.Query,
   },
   Mutation: {
     ...userResolvers.Mutation,
@@ -70,6 +72,7 @@ export const resolvers = {
   },
   User: userResolvers.User,
   Profile: userResolvers.Profile,
+  UserVariantRating: userResolvers.UserVariantRating,
   Game: gameResolvers.Game,
   Tournament: tournamentResolvers.Tournament,
   TournamentParticipant: tournamentResolvers.TournamentParticipant,

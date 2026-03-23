@@ -31,6 +31,22 @@ export const typeDefs = `#graphql
     CANCELLED
   }
 
+  enum ChessVariant {
+    ULTRABULLET
+    BULLET
+    BLITZ
+    RAPID
+    CLASSIC
+    CRAZYHOUSE
+    CHESS960
+    KOTH
+    THREECHECK
+    ANTICHESS
+    ATOMIC
+    HORDE
+    RACING_KINGS
+  }
+
   type User {
     id: ID!
     email: String!
@@ -39,6 +55,8 @@ export const typeDefs = `#graphql
     rating: Int!
     profile: Profile
     school: School
+    variantRatings: [UserVariantRating!]!
+    totalGamesPlayed: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
   }
@@ -50,6 +68,11 @@ export const typeDefs = `#graphql
     lastName: String!
     dateOfBirth: DateTime
     country: String!
+    chessTitle: String
+    avatarUrl: String
+    followerCount: Int!
+    friendCount: Int!
+    ratingTrend: [Int!]!
     xp: Int!
     level: Int!
     puzzleStreakCount: Int!
@@ -57,6 +80,13 @@ export const typeDefs = `#graphql
     badges: [Badge!]!
     createdAt: DateTime!
     updatedAt: DateTime!
+  }
+
+  type UserVariantRating {
+    variant: ChessVariant!
+    rating: Int!
+    ratingDelta: Int!
+    gamesPlayed: Int!
   }
 
   type School {
@@ -77,6 +107,7 @@ export const typeDefs = `#graphql
     status: GameStatus!
     result: GameResult
     timeControl: String!
+    analysisJson: String
     tournament: Tournament
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -89,6 +120,17 @@ export const typeDefs = `#graphql
     startDate: DateTime!
     endDate: DateTime
     status: TournamentStatus!
+    chessVariant: String!
+    arenaTimeControl: String!
+    format: String!
+    maxPlayers: Int!
+    durationMinutes: Int!
+    cardColor: String!
+    isSponsored: Boolean!
+    isRated: Boolean!
+    iconType: String
+    prizePoolJson: String
+    currentPlayers: Int!
     participants: [TournamentParticipant!]!
     games: [Game!]!
     createdAt: DateTime!
@@ -126,6 +168,62 @@ export const typeDefs = `#graphql
   type LeaderboardEntry {
     user: User!
     gamesPlayed: Int!
+  }
+
+  type PlatformMetrics {
+    playersTotal: Int!
+    playingNow: Int!
+  }
+
+  type PlayersLeaderboardRow {
+    rank: Int!
+    user: User!
+    rating: Int!
+    gamesPlayed: Int!
+    ratingTrend: [Int!]!
+  }
+
+  type RatingBucket {
+    ratingMin: Int!
+    ratingMax: Int!
+    count: Int!
+  }
+
+  type RadarSkills {
+    sacrifice: Float!
+    endgame: Float!
+    positional: Float!
+    matingAttack: Float!
+    tactics: Float!
+    opening: Float!
+  }
+
+  type PuzzleDashboard {
+    periodDays: Int!
+    solvedCount: Int!
+    performanceRating: Int!
+    successRate: Float!
+    radar: RadarSkills!
+  }
+
+  type LearnCourse {
+    id: ID!
+    slug: String!
+    title: String!
+    category: String!
+    sortOrder: Int!
+    completed: Boolean!
+    bookmarked: Boolean!
+  }
+
+  type MeTournamentStats {
+    totalJoined: Int!
+    breakdown: [VariantCount!]!
+  }
+
+  type VariantCount {
+    variant: String!
+    count: Int!
   }
 
   type SchoolStats {
@@ -206,6 +304,22 @@ export const typeDefs = `#graphql
     me: User
     user(id: ID!): User
     users(filters: UserFilters): [User!]!
+
+    platformMetrics: PlatformMetrics!
+    playersLeaderboard(limit: Int): [PlayersLeaderboardRow!]!
+    ratingDistribution: [RatingBucket!]!
+    soonestTournaments(limit: Int): [Tournament!]!
+    tournamentSchedule(
+      rangeStart: DateTime!
+      rangeEnd: DateTime!
+      search: String
+      chessVariant: String
+      joinedOnly: Boolean
+    ): [Tournament!]!
+
+    puzzleDashboard: PuzzleDashboard
+    learnCourses: [LearnCourse!]!
+    meTournamentStats: MeTournamentStats
 
     game(id: ID!): Game
     myGames(status: GameStatus): [Game!]!

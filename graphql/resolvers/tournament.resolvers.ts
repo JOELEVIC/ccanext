@@ -100,6 +100,14 @@ export const tournamentResolvers = {
     school: (parent: { school?: unknown }) => parent.school,
     participants: (parent: { participants?: unknown }) => parent.participants,
     games: (parent: { games?: unknown }) => parent.games,
+    currentPlayers: (parent: { participants?: { length: number }[] }) =>
+      parent.participants?.length ?? 0,
+    prizePoolJson: (parent: { prizePoolJson?: unknown }) =>
+      parent.prizePoolJson == null
+        ? null
+        : typeof parent.prizePoolJson === "string"
+          ? parent.prizePoolJson
+          : JSON.stringify(parent.prizePoolJson),
   },
 
   TournamentParticipant: {

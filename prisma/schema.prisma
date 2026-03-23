@@ -30,6 +30,9 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   tournamentParticipants TournamentParticipant[]
+  variantRatings         UserVariantRating[]
+  puzzleStats            PuzzleUserStats?
+  courseProgress         CourseProgress[]
 
   @@index([email])
   @@index([username])
@@ -56,6 +59,11 @@ model Profile {
   lastName             String
   dateOfBirth          DateTime?
   country              String    @default("CM")
+  chessTitle           String?
+  avatarUrl            String?
+  followerCount        Int       @default(0)
+  friendCount          Int       @default(0)
+  ratingTrendJson      Json?
   xp                   Int       @default(0)
   lastPuzzleSolvedAt   DateTime?
   puzzleStreakCount    Int       @default(0)
@@ -98,6 +106,7 @@ model Game {
   result         GameResult?
   status         GameStatus    @default(PENDING)
   timeControl    String        // e.g., "10+0", "30+0"
+  analysisJson   Json?
   tournamentId   String?
   tournament     Tournament?   @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
   gameXpAwards   GameXpAward[]
@@ -147,20 +156,31 @@ enum GameResult {
 // ============================================================================
 
 model Tournament {
-  id           String                  @id @default(uuid())
-  name         String
-  schoolId     String
-  school       School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  startDate    DateTime
-  endDate      DateTime?
-  status       TournamentStatus        @default(UPCOMING)
-  games        Game[]
-  participants TournamentParticipant[]
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
+  id               String                  @id @default(uuid())
+  name             String
+  schoolId         String
+  school           School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  startDate        DateTime
+  endDate          DateTime?
+  status           TournamentStatus        @default(UPCOMING)
+  chessVariant     String                  @default("Blitz")
+  arenaTimeControl String                  @default("3+0")
+  format           String                  @default("ARENA")
+  maxPlayers       Int                     @default(450)
+  durationMinutes  Int                     @default(60)
+  cardColor        String                  @default("blue")
+  isSponsored      Boolean                 @default(false)
+  isRated          Boolean                 @default(true)
+  iconType         String?
+  prizePoolJson    Json?
+  games            Game[]
+  participants     TournamentParticipant[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
 
   @@index([schoolId])
   @@index([status])
+  @@index([startDate])
   @@map("tournaments")
 }
 
@@ -214,4 +234,92 @@ model Badge {
 
   @@index([profileId])
   @@map("badges")
+}
+
+// ============================================================================
+// CHESS.PRO EXTENSIONS: ratings, metrics, learn progress
+// ============================================================================
+
+enum ChessVariant {
+  ULTRABULLET
+  BULLET
+  BLITZ
+  RAPID
+  CLASSIC
+  CRAZYHOUSE
+  CHESS960
+  KOTH
+  THREECHECK
+  ANTICHESS
+  ATOMIC
+  HORDE
+  RACING_KINGS
+
+  @@map("chess_variant")
+}
+
+model UserVariantRating {
+  id           String       @id @default(uuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variant      ChessVariant
+  rating       Int          @default(1200)
+  ratingDelta  Int          @default(0)
+  gamesPlayed  Int          @default(0)
+
+  @@unique([userId, variant])
+  @@index([userId])
+  @@map("user_variant_ratings")
+}
+
+model PuzzleUserStats {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periodDays          Int      @default(30)
+  solvedCount         Int      @default(0)
+  performanceRating   Int    @default(1800)
+  successRate         Float    @default(0)
+  radarSkillsJson     Json
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
+  @@map("puzzle_user_stats")
+}
+
+model PlatformMetric {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  intValue  Int?
+  strValue  String?
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_metrics")
+}
+
+model Course {
+  id          String           @id @default(uuid())
+  slug        String           @unique
+  title       String
+  category    String
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+  progress    CourseProgress[]
+
+  @@index([category])
+  @@map("courses")
+}
+
+model CourseProgress {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  completed   Boolean  @default(false)
+  bookmarked  Boolean  @default(false)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@map("course_progress")
 }

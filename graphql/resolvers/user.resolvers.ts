@@ -86,11 +86,38 @@ export const userResolvers = {
   User: {
     profile: (parent: { profile?: unknown }) => parent.profile,
     school: (parent: { school?: unknown }) => parent.school,
+    variantRatings: async (
+      parent: { id: string },
+      _: unknown,
+      context: GraphQLContextWithServices
+    ) => {
+      return context.prisma.userVariantRating.findMany({
+        where: { userId: parent.id },
+        orderBy: { variant: "asc" },
+      });
+    },
+    totalGamesPlayed: async (
+      parent: { id: string },
+      _: unknown,
+      context: GraphQLContextWithServices
+    ) => {
+      return context.prisma.game.count({
+        where: {
+          status: "COMPLETED",
+          OR: [{ whiteId: parent.id }, { blackId: parent.id }],
+        },
+      });
+    },
   },
 
   Profile: {
     level: (parent: { xp: number }) => {
       return 1 + Math.floor((parent.xp ?? 0) / 100);
+    },
+    ratingTrend: (parent: { ratingTrendJson?: unknown }) => {
+      const j = parent.ratingTrendJson;
+      if (!Array.isArray(j)) return [];
+      return j.map((x) => Number(x));
     },
     badges: async (
       parent: { id: string },
@@ -99,5 +126,12 @@ export const userResolvers = {
     ) => {
       return context.services.learningService.getUserBadges(parent.id);
     },
+  },
+
+  UserVariantRating: {
+    variant: (parent: { variant: string }) => parent.variant,
+    rating: (parent: { rating: number }) => parent.rating,
+    ratingDelta: (parent: { ratingDelta: number }) => parent.ratingDelta,
+    gamesPlayed: (parent: { gamesPlayed: number }) => parent.gamesPlayed,
   },
 };

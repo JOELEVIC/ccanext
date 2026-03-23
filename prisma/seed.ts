@@ -3,6 +3,7 @@
  */
 import { PrismaClient, ChessVariant, GameStatus, GameResult, TournamentStatus, UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { Chess } from "chess.js";
 
 const prisma = new PrismaClient();
 
@@ -282,6 +283,42 @@ async function main() {
 
   const w = users[1]!;
   const b = users[2]!;
+
+  const demoGameMoves =
+    "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7";
+
+  function parseMoveTokens(moves: string): string[] {
+    return moves
+      .trim()
+      .split(/\s+/)
+      .filter((t) => t.length > 0 && !/^\d+\.?$/.test(t));
+  }
+
+  /** Demo reviews: mostly best = played; a few plies use another legal move as pseudo-engine best. */
+  function buildMoveReviews(sanList: string[]): { playedSan: string; bestSan: string }[] {
+    const chess = new Chess();
+    const out: { playedSan: string; bestSan: string }[] = [];
+    const overrides: Record<number, string> = {
+      5: "d6",
+      14: "d3",
+    };
+    for (let i = 0; i < sanList.length; i++) {
+      const san = sanList[i]!;
+      const want = overrides[i];
+      const legal = chess.moves({ verbose: true });
+      let bestSan = san;
+      if (want && legal.some((m) => m.san === want)) {
+        bestSan = want;
+      }
+      out.push({ playedSan: san, bestSan });
+      chess.move(san);
+    }
+    return out;
+  }
+
+  const demoSans = parseMoveTokens(demoGameMoves);
+  const moveReviews = buildMoveReviews(demoSans);
+
   const analysisJson = {
     white: { inaccuracies: 4, mistakes: 1, blunders: 0, acpl: 28 },
     black: { inaccuracies: 6, mistakes: 2, blunders: 1, acpl: 45 },
@@ -292,13 +329,14 @@ async function main() {
       { ply: 40, cp: 400 },
       { ply: 55, cp: 600 },
     ],
+    moveReviews,
   };
 
   await prisma.game.create({
     data: {
       whiteId: w.id,
       blackId: b.id,
-      moves: "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7",
+      moves: demoGameMoves,
       result: GameResult.WHITE_WIN,
       status: GameStatus.COMPLETED,
       timeControl: "1+1",

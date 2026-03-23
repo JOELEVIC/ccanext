@@ -1,5 +1,5 @@
 /**
- * DEV seed: Chess.Pro–style demo data. Re-runnable: removes prior @seed.chess.pro users and platform tournaments first.
+ * DEV seed: DChessAcademy demo data. Re-runnable: removes prior @seed.* users and platform tournaments first.
  */
 import { PrismaClient, ChessVariant, GameStatus, GameResult, TournamentStatus, UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -34,9 +34,13 @@ const radarDefault = {
   opening: 74,
 };
 
+const SEED_EMAIL_SUFFIXES = ["@seed.dchessacademy", "@seed.chess.pro"] as const;
+
 async function wipeSeedScope() {
   const seedUsers = await prisma.user.findMany({
-    where: { email: { endsWith: "@seed.chess.pro" } },
+    where: {
+      OR: SEED_EMAIL_SUFFIXES.map((suffix) => ({ email: { endsWith: suffix } })),
+    },
     select: { id: true },
   });
   const seedIds = seedUsers.map((u) => u.id);
@@ -87,10 +91,10 @@ async function main() {
     where: { id: PLATFORM_SCHOOL_ID },
     create: {
       id: PLATFORM_SCHOOL_ID,
-      name: "Chess.Pro Global",
+      name: "DChessAcademy Global",
       region: "International",
     },
-    update: { name: "Chess.Pro Global", region: "International" },
+    update: { name: "DChessAcademy Global", region: "International" },
   });
 
   await prisma.platformMetric.upsert({
@@ -131,7 +135,7 @@ async function main() {
 
   for (let i = 0; i < usernames.length; i++) {
     const u = usernames[i]!;
-    const email = `${u.toLowerCase().replace(/[^a-z0-9]/g, "")}@seed.chess.pro`;
+    const email = `${u.toLowerCase().replace(/[^a-z0-9]/g, "")}@seed.dchessacademy`;
     const rating = 2890 - i * 45;
     const user = await prisma.user.create({
       data: {
@@ -302,7 +306,7 @@ async function main() {
     },
   });
 
-  console.log("Seed OK. Demo login: grasevandir@seed.chess.pro / demo1234");
+  console.log("Seed OK. Demo login: grasevandir@seed.dchessacademy / demo1234");
 }
 
 main()

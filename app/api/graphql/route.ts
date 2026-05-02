@@ -13,7 +13,15 @@ const { handleRequest } = createYoga({
   cors: {
     origin: config.cors.origin.split(",").map((o) => o.trim()).filter(Boolean),
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"],
+    // `Apollo-Require-Preflight` is required by Apollo Server's CSRF protection
+    // and the cross-site UI must be allowed to send it. Without it on the
+    // allow-list, browsers abort the preflight and no GraphQL call goes out.
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Apollo-Require-Preflight",
+      "X-Apollo-Operation-Name",
+    ],
   },
 });
 

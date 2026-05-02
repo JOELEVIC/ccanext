@@ -16,9 +16,9 @@ export class LearningService {
   }
 
   async getDailyPuzzle() {
-    const puzzle = await this.learningRepository.getDailyPuzzle();
-    if (!puzzle) throw new NotFoundError("No puzzles available");
-    return puzzle;
+    // Return null when no puzzles exist — UI renders an empty state.
+    // Throwing was breaking the dashboard tile entirely.
+    return this.learningRepository.getDailyPuzzle();
   }
 
   async getPuzzles(filters?: PuzzleFilters) {

@@ -1,8 +1,17 @@
 /**
- * Backfill script: ensure every User has a Profile row, and seed a starter
- * library of puzzles if the puzzles table is empty. Idempotent.
+ * Reseed the puzzles table from the canonical list in
+ * backfill-puzzles-and-profiles.ts.
  *
- * Run: npx tsx prisma/backfill-puzzles-and-profiles.ts
+ * Use this when the puzzles table already has stale / broken entries
+ * (the backfill script skips when puzzles exist). This script DELETES
+ * everything first, then re-inserts the verified set.
+ *
+ *   npx tsx prisma/reseed-puzzles.ts          # safe — prints what would change
+ *   FORCE=1 npx tsx prisma/reseed-puzzles.ts  # actually wipe + reinsert
+ *
+ * Every solution is a single ply that has been validated against
+ * chess.js. Mate-in-1 puzzles produce checkmate; tactic puzzles play
+ * a legal key move.
  */
 import { PrismaClient } from "@prisma/client";
 
@@ -10,16 +19,11 @@ const prisma = new PrismaClient();
 
 interface PuzzleSpec {
   fen: string;
-  solution: string; // space-separated UCI moves
+  solution: string;
   difficulty: number;
   theme: string[];
 }
 
-// Canonical, hand-verified tactics. Every FEN is a legal non-terminal
-// position and every solution is a single ply that the user must find.
-// The puzzle page's matcher is prefix-based, so multi-move solutions
-// require the user to enter every opponent reply — we keep things to
-// one move so each puzzle is "find the key move".
 const PUZZLES: PuzzleSpec[] = [
   // === Mate in 1 ===
   { fen: "rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 2",      solution: "d8h4",  difficulty: 600,  theme: ["mateIn1", "fool"] },
@@ -50,46 +54,21 @@ const PUZZLES: PuzzleSpec[] = [
   { fen: "1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1",                                        solution: "c1c4",  difficulty: 2000, theme: ["endgame", "lucena", "rookEndgame"] },
 ];
 
-async function seedPuzzles() {
+async function main(): Promise<void> {
+  const force = process.env.FORCE === "1";
   const existing = await prisma.puzzle.count();
-  if (existing > 0) {
-    console.log(`✓ Puzzles table already has ${existing} entries — skipping`);
+  console.log(`Found ${existing} existing puzzles. New canonical list has ${PUZZLES.length}.`);
+  if (!force) {
+    console.log("DRY RUN — set FORCE=1 to actually wipe and reseed.");
     return;
   }
-  console.log(`→ Seeding ${PUZZLES.length} puzzles...`);
+  console.log("→ deleting all puzzles…");
+  await prisma.puzzle.deleteMany({});
+  console.log(`→ inserting ${PUZZLES.length} verified puzzles…`);
   for (const p of PUZZLES) {
     await prisma.puzzle.create({ data: p });
   }
-  console.log(`✓ Inserted ${PUZZLES.length} puzzles`);
-}
-
-async function backfillProfiles() {
-  const usersMissingProfile = await prisma.user.findMany({
-    where: { profile: { is: null } },
-    select: { id: true, username: true, email: true },
-  });
-  if (usersMissingProfile.length === 0) {
-    console.log("✓ All users already have profiles");
-    return;
-  }
-  console.log(`→ Creating profiles for ${usersMissingProfile.length} users without one`);
-  for (const u of usersMissingProfile) {
-    const username = u.username || u.email.split("@")[0];
-    await prisma.profile.create({
-      data: {
-        userId: u.id,
-        firstName: username,
-        lastName: "",
-        country: "CM",
-      },
-    });
-    console.log(`  + ${u.email} (${username})`);
-  }
-}
-
-async function main() {
-  await backfillProfiles();
-  await seedPuzzles();
+  console.log("✓ reseed complete.");
 }
 
 main()

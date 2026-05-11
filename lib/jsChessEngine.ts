@@ -113,7 +113,23 @@ function moveScore(m: Move): number {
   }
   if (m.promotion) s += PIECE_VALUE[m.promotion] ?? 0;
   if ((m.flags ?? "").includes("c")) s += 5;
+  // Checks first — guarantees we always look at mate-delivering moves
+  // before quiet moves under tight deadlines.
+  if (m.san?.endsWith("#")) s += 50_000;
+  else if (m.san?.endsWith("+")) s += 50;
   return s;
+}
+
+/** Scan root moves for an immediate checkmate. Cheap, always runs first. */
+function findMateInOne(c: Chess, moves: Move[]): Move | null {
+  for (const m of moves) {
+    if (m.san?.endsWith("#")) return m;
+    c.move(m);
+    const mate = c.isCheckmate();
+    c.undo();
+    if (mate) return m;
+  }
+  return null;
 }
 
 function orderMoves(moves: Move[]): Move[] {
@@ -177,8 +193,17 @@ export function getBestMoveJS(fen: string, elo: number = 1600): string | null {
   if (c.isGameOver()) return null;
 
   const { depth, topK } = configForElo(elo);
-  const deadline = Date.now() + 600;
-  const rootMoves = orderMoves(c.moves({ verbose: true }));
+  // Generous deadline — Vercel functions have a 10 s budget. Cold-start
+  // V8 in serverless can run negamax ~3× slower than warm Node, so being
+  // tight here was causing the engine to miss mate-in-1 on prod.
+  const deadline = Date.now() + 1500;
+  const allMoves = c.moves({ verbose: true });
+
+  // Mate-in-1 fast path — never miss a forced mate.
+  const mate = findMateInOne(c, allMoves);
+  if (mate) return `${mate.from}${mate.to}${mate.promotion ?? ""}`;
+
+  const rootMoves = orderMoves(allMoves);
   const scored: { move: Move; score: number }[] = [];
   for (const m of rootMoves) {
     c.move(m);

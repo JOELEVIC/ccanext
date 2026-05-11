@@ -338,6 +338,16 @@ export const typeDefs = `#graphql
     dailyPuzzle: Puzzle
     puzzles(difficulty: Int): [Puzzle!]!
     puzzle(id: ID!): Puzzle
+
+    "Server-side chess engine — pure-JS negamax. Best-move in UCI form."
+    engineBestMove(fen: String!, elo: Int): String
+    "Server-side chess engine evaluation (centipawns from white's perspective, or mate-in-N)."
+    engineEvaluation(fen: String!): EngineEvaluation
+  }
+
+  type EngineEvaluation {
+    cp: Int
+    mate: Int
   }
 
   type Mutation {

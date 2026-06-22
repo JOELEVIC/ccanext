@@ -136,6 +136,37 @@ function orderMoves(moves: Move[]): Move[] {
   return [...moves].sort((a, b) => moveScore(b) - moveScore(a));
 }
 
+/**
+ * Quiescence search — at the leaf, keep searching captures and promotions
+ * until the position is "quiet". Without this the fixed-depth negamax has a
+ * horizon effect and happily hangs pieces to a recapture one ply past the
+ * limit. This is the single biggest strength fix for the fallback engine.
+ */
+function quiescence(
+  c: Chess,
+  alpha: number,
+  beta: number,
+  deadline: number,
+): number {
+  if (c.isGameOver()) return evaluate(c);
+  const standPat = evaluate(c);
+  if (standPat >= beta) return beta;
+  if (standPat > alpha) alpha = standPat;
+  if (Date.now() > deadline) return alpha;
+
+  const tactical = orderMoves(
+    c.moves({ verbose: true }).filter((m) => m.captured || m.promotion),
+  );
+  for (const m of tactical) {
+    c.move(m);
+    const score = -quiescence(c, -beta, -alpha, deadline);
+    c.undo();
+    if (score >= beta) return beta;
+    if (score > alpha) alpha = score;
+  }
+  return alpha;
+}
+
 interface NegamaxResult {
   score: number;
   move: Move | null;
@@ -149,7 +180,8 @@ function negamax(
   deadline: number,
 ): NegamaxResult {
   if (Date.now() > deadline) return { score: evaluate(c), move: null };
-  if (depth === 0 || c.isGameOver()) return { score: evaluate(c), move: null };
+  if (c.isGameOver()) return { score: evaluate(c), move: null };
+  if (depth === 0) return { score: quiescence(c, alpha, beta, deadline), move: null };
   const moves = orderMoves(c.moves({ verbose: true }));
   if (moves.length === 0) return { score: evaluate(c), move: null };
 
@@ -176,10 +208,15 @@ interface EngineConfig {
 }
 
 function configForElo(elo: number): EngineConfig {
-  if (elo <= 500) return { depth: 1, topK: 8 };
-  if (elo <= 900) return { depth: 2, topK: 5 };
-  if (elo <= 1500) return { depth: 3, topK: 3 };
-  return { depth: 3, topK: 1 };
+  // Depth scales with Elo so the strength slider actually does something
+  // above 1500 (previously every Elo from 1501–3200 was identical depth 3).
+  // Combined with quiescence search, each extra ply is a real strength jump.
+  if (elo <= 500) return { depth: 1, topK: 6 };
+  if (elo <= 900) return { depth: 2, topK: 4 };
+  if (elo <= 1300) return { depth: 3, topK: 3 };
+  if (elo <= 1700) return { depth: 3, topK: 2 };
+  if (elo <= 2200) return { depth: 4, topK: 1 };
+  return { depth: 5, topK: 1 };
 }
 
 /** Return the engine's best move in UCI form, or null if the game is over. */
@@ -192,11 +229,10 @@ export function getBestMoveJS(fen: string, elo: number = 1600): string | null {
   }
   if (c.isGameOver()) return null;
 
-  const { depth, topK } = configForElo(elo);
-  // Generous deadline — Vercel functions have a 10 s budget. Cold-start
-  // V8 in serverless can run negamax ~3× slower than warm Node, so being
-  // tight here was causing the engine to miss mate-in-1 on prod.
-  const deadline = Date.now() + 1500;
+  const { depth: maxDepth, topK } = configForElo(elo);
+  // Snappy budget — the bot should answer fast. Iterative deepening below
+  // means we always have a complete result to fall back on if we run out.
+  const deadline = Date.now() + 1200;
   const allMoves = c.moves({ verbose: true });
 
   // Mate-in-1 fast path — never miss a forced mate.
@@ -204,15 +240,29 @@ export function getBestMoveJS(fen: string, elo: number = 1600): string | null {
   if (mate) return `${mate.from}${mate.to}${mate.promotion ?? ""}`;
 
   const rootMoves = orderMoves(allMoves);
-  const scored: { move: Move; score: number }[] = [];
-  for (const m of rootMoves) {
-    c.move(m);
-    const { score } = negamax(c, depth - 1, -Infinity, Infinity, deadline);
-    c.undo();
-    scored.push({ move: m, score: -score });
-    if (Date.now() > deadline) break;
+  // Iterative deepening: keep the deepest ranking that FULLY completed, so a
+  // mid-search timeout never leaves us choosing from a partial (and thus
+  // capture-biased) scan. maxDepth caps strength per Elo; weak bots stay
+  // shallow even when there's time to spare.
+  let scored: { move: Move; score: number }[] = rootMoves.map((m) => ({ move: m, score: 0 }));
+  for (let d = 1; d <= maxDepth; d++) {
+    const partial: { move: Move; score: number }[] = [];
+    let completed = true;
+    for (const m of rootMoves) {
+      if (Date.now() > deadline) {
+        completed = false;
+        break;
+      }
+      c.move(m);
+      const { score } = negamax(c, d - 1, -Infinity, Infinity, deadline);
+      c.undo();
+      partial.push({ move: m, score: -score });
+    }
+    if (!completed) break;
+    partial.sort((a, b) => b.score - a.score);
+    scored = partial;
   }
-  scored.sort((a, b) => b.score - a.score);
+
   if (scored.length === 0) return null;
   const pool = scored.slice(0, Math.min(topK, scored.length));
   const pick = pool[Math.floor(Math.random() * pool.length)] ?? scored[0];

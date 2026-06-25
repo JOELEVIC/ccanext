@@ -358,6 +358,7 @@ export const typeDefs = `#graphql
     createGame(input: CreateGameInput!): Game!
     makeMove(gameId: ID!, move: String!): Game!
     resignGame(gameId: ID!): Game!
+    cancelGame(gameId: ID!): Game!
     recordGameCompleted(gameId: ID!): GameXpResult!
 
     createTournament(input: CreateTournamentInput!): Tournament!

@@ -64,6 +64,28 @@ export class GameRepository {
     });
   }
 
+  /** The most recent still-in-play (pending/active), non-tournament game
+   *  between two players, in either colour — used to avoid creating duplicate
+   *  casual games against the same opponent. */
+  async findOpenBetween(userA: string, userB: string) {
+    return this.prisma.game.findFirst({
+      where: {
+        tournamentId: null,
+        status: { in: [GameStatus.PENDING, GameStatus.ACTIVE] },
+        OR: [
+          { whiteId: userA, blackId: userB },
+          { whiteId: userB, blackId: userA },
+        ],
+      },
+      include: {
+        white: { include: { profile: true, school: true } },
+        black: { include: { profile: true, school: true } },
+        tournament: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
   async create(data: {
     whiteId: string;
     blackId: string;

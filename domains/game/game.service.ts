@@ -36,6 +36,17 @@ export class GameService {
         'Invalid time control format. Use format: "minutes+increment"'
       );
 
+    // Don't spin up a duplicate casual game against someone you already have an
+    // unfinished game with — continue the existing one instead. (Tournament
+    // games are paired by the tournament and excluded.)
+    if (!data.tournamentId) {
+      const existing = await this.gameRepository.findOpenBetween(
+        data.whiteId,
+        data.blackId
+      );
+      if (existing) return existing;
+    }
+
     return this.gameRepository.create(data);
   }
 
@@ -101,6 +112,20 @@ export class GameService {
     await this.updateRatingsAfterGame(updatedGame);
 
     return updatedGame;
+  }
+
+  /** Cancel a game that never got going (a pending invite). Marks it ABANDONED
+   *  so it leaves the lists and no longer blocks a fresh pairing. */
+  async cancelGame(gameId: string, userId: string) {
+    const game = await this.getGameById(gameId);
+
+    if (userId !== game.whiteId && userId !== game.blackId)
+      throw new AuthorizationError("Only players can cancel this game");
+
+    if (game.status !== GameStatus.PENDING)
+      throw new ValidationError("Only a pending game can be cancelled");
+
+    return this.gameRepository.update(gameId, { status: GameStatus.ABANDONED });
   }
 
   async endGame(gameId: string, result: GameResult) {

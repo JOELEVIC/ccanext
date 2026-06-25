@@ -89,6 +89,22 @@ export const gameResolvers = {
       );
     },
 
+    cancelGame: async (
+      _: unknown,
+      { gameId }: { gameId: string },
+      context: GraphQLContextWithServices
+    ) => {
+      if (!context.user) {
+        throw new GraphQLError("Not authenticated", {
+          extensions: { code: "UNAUTHENTICATED" },
+        });
+      }
+      return context.services.gameService.cancelGame(
+        gameId,
+        context.user.userId
+      );
+    },
+
     recordGameCompleted: async (
       _: unknown,
       { gameId }: { gameId: string },

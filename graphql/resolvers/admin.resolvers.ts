@@ -1,5 +1,6 @@
 import { GraphQLError } from "graphql";
 import type { GraphQLContextWithServices } from "@/graphql/context";
+import { AppError } from "@/utils/types";
 
 /** Require a valid admin token (separate from player auth). */
 function requireAdmin(context: GraphQLContextWithServices) {
@@ -11,18 +12,45 @@ function requireAdmin(context: GraphQLContextWithServices) {
   return context.admin;
 }
 
+/**
+ * Surface service errors as real GraphQL errors. The domain services throw
+ * AppError subclasses (AuthenticationError, ValidationError, …); without this,
+ * graphql-yoga masks them as a generic "Unexpected error.". Rethrowing as a
+ * GraphQLError keeps the message + code (e.g. "Invalid credentials").
+ */
+async function adminCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof GraphQLError) throw e;
+    if (e instanceof AppError) {
+      throw new GraphQLError(e.message, { extensions: { code: e.code ?? "ADMIN_ERROR" } });
+    }
+    throw e;
+  }
+}
+
 export const adminResolvers = {
   Query: {
     // Returns null (not an error) when unauthenticated, so the admin app can
     // probe session state on load.
     adminMe: async (_: unknown, __: unknown, context: GraphQLContextWithServices) => {
       if (!context.admin) return null;
-      return context.services.adminService.me(context.admin.adminId);
+      return adminCall(() => context.services.adminService.me(context.admin!.adminId));
+    },
+
+    // Step 1 of login — unauthenticated; decides set-password vs password prompt.
+    adminAuthStage: async (
+      _: unknown,
+      { email }: { email: string },
+      context: GraphQLContextWithServices
+    ) => {
+      return adminCall(() => context.services.adminService.authStage(email));
     },
 
     adminOverview: async (_: unknown, __: unknown, context: GraphQLContextWithServices) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.getOverview(admin.adminId);
+      return adminCall(() => context.services.adminService.getOverview(admin.adminId));
     },
 
     adminUsers: async (
@@ -31,7 +59,7 @@ export const adminResolvers = {
       context: GraphQLContextWithServices
     ) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.listUsers(admin.adminId, args);
+      return adminCall(() => context.services.adminService.listUsers(admin.adminId, args));
     },
 
     adminUser: async (
@@ -40,12 +68,12 @@ export const adminResolvers = {
       context: GraphQLContextWithServices
     ) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.getUserDetail(admin.adminId, userId);
+      return adminCall(() => context.services.adminService.getUserDetail(admin.adminId, userId));
     },
 
     adminAdmins: async (_: unknown, __: unknown, context: GraphQLContextWithServices) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.listAdmins(admin.adminId);
+      return adminCall(() => context.services.adminService.listAdmins(admin.adminId));
     },
   },
 
@@ -55,7 +83,7 @@ export const adminResolvers = {
       { email, password }: { email: string; password: string },
       context: GraphQLContextWithServices
     ) => {
-      return context.services.adminService.login(email, password);
+      return adminCall(() => context.services.adminService.login(email, password));
     },
 
     adminAddAdmin: async (
@@ -64,7 +92,7 @@ export const adminResolvers = {
       context: GraphQLContextWithServices
     ) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.addAdmin(admin.adminId, email);
+      return adminCall(() => context.services.adminService.addAdmin(admin.adminId, email));
     },
 
     adminRemoveAdmin: async (
@@ -73,7 +101,7 @@ export const adminResolvers = {
       context: GraphQLContextWithServices
     ) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.removeAdmin(admin.adminId, adminId);
+      return adminCall(() => context.services.adminService.removeAdmin(admin.adminId, adminId));
     },
 
     adminTriggerPlacement: async (
@@ -82,7 +110,7 @@ export const adminResolvers = {
       context: GraphQLContextWithServices
     ) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.triggerPlacement(admin.adminId, userId);
+      return adminCall(() => context.services.adminService.triggerPlacement(admin.adminId, userId));
     },
 
     adminOverrideRating: async (
@@ -91,7 +119,9 @@ export const adminResolvers = {
       context: GraphQLContextWithServices
     ) => {
       const admin = requireAdmin(context);
-      return context.services.adminService.overrideRating(admin.adminId, userId, rating);
+      return adminCall(() =>
+        context.services.adminService.overrideRating(admin.adminId, userId, rating)
+      );
     },
   },
 };

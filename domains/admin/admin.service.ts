@@ -83,6 +83,24 @@ export class AdminService {
     return { token, admin: sanitize(current) };
   }
 
+  /**
+   * Step 1 of the two-step login: given an email, tell the UI whether to show a
+   * "set your password" first-time screen or a normal password prompt.
+   *
+   * To avoid leaking which emails are admins, we ONLY return SET_PASSWORD for a
+   * provisioned admin whose password isn't set yet. An existing admin WITH a
+   * password and an unknown email both return PASSWORD (so unknown emails just
+   * fail at the password step like a wrong password would). The SET_PASSWORD
+   * signal is no weaker than the existing first-login-sets-password behaviour.
+   */
+  async authStage(email: string): Promise<{ email: string; mode: "SET_PASSWORD" | "PASSWORD" }> {
+    const normalized = (email ?? "").trim().toLowerCase();
+    await this.repo.ensureRoot(ROOT_ADMIN_EMAIL);
+    const admin = normalized ? await this.repo.findByEmail(normalized) : null;
+    const mode = admin && admin.passwordHash === "" ? "SET_PASSWORD" : "PASSWORD";
+    return { email: normalized, mode };
+  }
+
   /** Resolve + assert the acting admin still exists (token role may be stale). */
   async requireAdmin(adminId: string): Promise<AdminUser> {
     const admin = await this.repo.findById(adminId);

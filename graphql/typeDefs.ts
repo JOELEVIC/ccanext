@@ -553,9 +553,14 @@ export const typeDefs = `#graphql
   type AdminTriggerResult { ok: Boolean!  runId: ID! }
   type AdminOverrideResult { ok: Boolean!  rating: Int! }
 
+  # Step 1 of the two-step login. mode = "SET_PASSWORD" (provisioned admin, no
+  # password yet → first-time setup) or "PASSWORD" (normal prompt).
+  type AdminAuthStage { email: String!  mode: String! }
+
   extend type Query {
     placementStatus: PlacementStatus!
     adminMe: AdminUser
+    adminAuthStage(email: String!): AdminAuthStage!
     adminOverview: AdminOverview!
     adminUsers(search: String, limit: Int, offset: Int): AdminUserList!
     adminUser(userId: ID!): AdminUserDetail!

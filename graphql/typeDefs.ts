@@ -359,6 +359,8 @@ export const typeDefs = `#graphql
     makeMove(gameId: ID!, move: String!): Game!
     resignGame(gameId: ID!): Game!
     cancelGame(gameId: ID!): Game!
+    "Finalize a live game decided on the gameplay server: persist result/moves + apply Glicko-2 ratings. A null result aborts (voids) the game. Idempotent."
+    recordGameResult(gameId: ID!, result: GameResult, reason: String, moves: String): Game!
     recordGameCompleted(gameId: ID!): GameXpResult!
 
     createTournament(input: CreateTournamentInput!): Tournament!

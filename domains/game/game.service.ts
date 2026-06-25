@@ -8,10 +8,16 @@ import {
   AuthorizationError,
 } from "@/utils/types";
 import { UserService } from "../user/user.service";
+import { glicko2Update, DEFAULT_RD, DEFAULT_VOL } from "./glicko2";
 
 const XP_WIN = 20;
 const XP_DRAW = 10;
 const XP_LOSS = 5;
+
+/** Glicko float rating → the clamped integer mirrored on users.rating for display. */
+function toDisplayRating(rating: number): number {
+  return Math.max(0, Math.min(3000, Math.round(rating)));
+}
 
 export class GameService {
   private gameRepository: GameRepository;
@@ -228,5 +234,117 @@ export class GameService {
       });
     }
     return { xpAwarded: xp };
+  }
+
+  /**
+   * Finalize a live game whose outcome was decided on the gameplay server (cca):
+   * persist status/result/moves and apply Glicko-2 rating changes. Idempotent —
+   * an already-finished game is returned unchanged (no double rating). A null
+   * `result` means the game was aborted (voided): marked ABANDONED, no rating.
+   */
+  async recordGameResult(params: {
+    gameId: string;
+    userId: string;
+    result: GameResult | null;
+    reason?: string | null;
+    moves?: string | null;
+  }) {
+    const game = await this.getGameById(params.gameId);
+
+    if (params.userId !== game.whiteId && params.userId !== game.blackId)
+      throw new AuthorizationError("You are not a participant in this game");
+
+    if (
+      game.status === GameStatus.COMPLETED ||
+      game.status === GameStatus.ABANDONED
+    )
+      return game;
+
+    if (params.result == null) {
+      return this.gameRepository.update(params.gameId, {
+        status: GameStatus.ABANDONED,
+        ...(params.moves != null ? { moves: params.moves } : {}),
+      });
+    }
+
+    const updated = await this.gameRepository.update(params.gameId, {
+      status: GameStatus.COMPLETED,
+      result: params.result,
+      ...(params.moves != null ? { moves: params.moves } : {}),
+    });
+
+    // Isolated so a not-yet-migrated player_ratings table degrades gracefully:
+    // the result still persists; ratings catch up once the migration is applied.
+    try {
+      await this.applyGlickoRatings(updated);
+    } catch (err) {
+      console.error("[recordGameResult] rating update skipped:", err);
+    }
+
+    return updated;
+  }
+
+  private async applyGlickoRatings(game: {
+    result: GameResult | null;
+    whiteId: string;
+    blackId: string;
+    white: { rating: number };
+    black: { rating: number };
+  }) {
+    if (!game.result) return;
+
+    const whiteState = await this.getOrInitRating(game.whiteId, game.white.rating);
+    const blackState = await this.getOrInitRating(game.blackId, game.black.rating);
+
+    const whiteScore =
+      game.result === GameResult.WHITE_WIN
+        ? 1
+        : game.result === GameResult.BLACK_WIN
+          ? 0
+          : 0.5;
+    const blackScore = 1 - whiteScore;
+
+    // Both updates use the opponent's PRE-game state.
+    const whiteNew = glicko2Update(whiteState, blackState, whiteScore);
+    const blackNew = glicko2Update(blackState, whiteState, blackScore);
+
+    await this.prisma.$transaction([
+      this.upsertRating(game.whiteId, whiteNew),
+      this.upsertRating(game.blackId, blackNew),
+      this.prisma.user.update({
+        where: { id: game.whiteId },
+        data: { rating: toDisplayRating(whiteNew.rating) },
+      }),
+      this.prisma.user.update({
+        where: { id: game.blackId },
+        data: { rating: toDisplayRating(blackNew.rating) },
+      }),
+    ]);
+  }
+
+  private async getOrInitRating(userId: string, fallbackRating: number) {
+    const row = await this.prisma.playerRating.findUnique({ where: { userId } });
+    if (row) return { rating: row.rating, rd: row.deviation, vol: row.volatility };
+    return { rating: fallbackRating, rd: DEFAULT_RD, vol: DEFAULT_VOL };
+  }
+
+  private upsertRating(
+    userId: string,
+    state: { rating: number; rd: number; vol: number }
+  ) {
+    return this.prisma.playerRating.upsert({
+      where: { userId },
+      create: {
+        userId,
+        rating: state.rating,
+        deviation: state.rd,
+        volatility: state.vol,
+      },
+      update: {
+        rating: state.rating,
+        deviation: state.rd,
+        volatility: state.vol,
+      },
+    });
   }
 }

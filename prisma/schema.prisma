@@ -33,11 +33,27 @@ model User {
   variantRatings         UserVariantRating[]
   puzzleStats            PuzzleUserStats?
   courseProgress         CourseProgress[]
+  playerRating           PlayerRating?
 
   @@index([email])
   @@index([username])
   @@index([schoolId])
   @@map("users")
+}
+
+// Glicko-2 rating state, kept in its own table so the heavily-read `users` row is
+// untouched (and the app keeps working even before this table is migrated in).
+// `rating` is the precise (float) Glicko rating carried forward game to game;
+// `users.rating` mirrors a rounded copy for display.
+model PlayerRating {
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating     Float    @default(1200)
+  deviation  Float    @default(350)
+  volatility Float    @default(0.06)
+  updatedAt  DateTime @updatedAt
+
+  @@map("player_ratings")
 }
 
 enum UserRole {

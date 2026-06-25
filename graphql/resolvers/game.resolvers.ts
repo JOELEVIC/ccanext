@@ -1,6 +1,6 @@
 import { GraphQLError } from "graphql";
 import type { GraphQLContextWithServices } from "@/graphql/context";
-import type { GameStatus } from "@prisma/client";
+import type { GameStatus, GameResult } from "@prisma/client";
 
 export const gameResolvers = {
   Query: {
@@ -103,6 +103,35 @@ export const gameResolvers = {
         gameId,
         context.user.userId
       );
+    },
+
+    recordGameResult: async (
+      _: unknown,
+      {
+        gameId,
+        result,
+        reason,
+        moves,
+      }: {
+        gameId: string;
+        result?: GameResult | null;
+        reason?: string | null;
+        moves?: string | null;
+      },
+      context: GraphQLContextWithServices
+    ) => {
+      if (!context.user) {
+        throw new GraphQLError("Not authenticated", {
+          extensions: { code: "UNAUTHENTICATED" },
+        });
+      }
+      return context.services.gameService.recordGameResult({
+        gameId,
+        userId: context.user.userId,
+        result: result ?? null,
+        reason,
+        moves,
+      });
     },
 
     recordGameCompleted: async (

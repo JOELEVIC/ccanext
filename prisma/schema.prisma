@@ -6,11 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  // Direct (non-pooled) connection used for `prisma migrate deploy` on deploy.
-  // Falls back to DATABASE_URL locally if DIRECT_URL is unset.
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ============================================================================

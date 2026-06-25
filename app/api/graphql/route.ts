@@ -1,9 +1,18 @@
 import { createYoga } from "graphql-yoga";
+import { GraphQLError } from "graphql";
 
 export const dynamic = "force-dynamic";
 import { schema } from "@/graphql/schema";
 import { buildContext } from "@/graphql/context";
 import { config } from "@/config/env";
+import { AppError } from "@/utils/types";
+
+/** The AppError behind a thrown error, if any (yoga may wrap it as `originalError`). */
+function unwrapAppError(error: unknown): AppError | null {
+  if (error instanceof AppError) return error;
+  const orig = (error as { originalError?: unknown } | null | undefined)?.originalError;
+  return orig instanceof AppError ? orig : null;
+}
 
 const ENV_ORIGINS = config.cors.origin
   .split(",")
@@ -28,6 +37,24 @@ const { handleRequest } = createYoga({
   graphqlEndpoint: "/api/graphql",
   fetchAPI: { Request, Response },
   context: async ({ request }) => buildContext(request),
+  // Domain services throw AppError subclasses (AuthenticationError, ValidationError, …)
+  // for expected, user-facing failures — e.g. "Invalid email or password" or
+  // "Email already in use". Surface those verbatim (with their code) instead of
+  // yoga's generic "Unexpected error."; everything else stays masked so internal
+  // details never leak.
+  maskedErrors: {
+    maskError(error, message) {
+      const appErr = unwrapAppError(error);
+      if (appErr) {
+        return new GraphQLError(appErr.message, { extensions: { code: appErr.code ?? "BAD_USER_INPUT" } });
+      }
+      // Preserve intentionally-thrown GraphQLErrors (e.g. "Not authenticated"); mask the rest.
+      if (error instanceof GraphQLError && (error.originalError == null || error.originalError instanceof GraphQLError)) {
+        return error;
+      }
+      return new GraphQLError(message);
+    },
+  },
   // Function form so the allow-list can include the admin subdomain by pattern.
   cors: (request) => ({
     origin: corsOriginFor(request),

@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import type { PrismaClient } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import { UserRepository } from "./user.repository";
+import { verifyGoogleIdToken } from "@/domains/auth/googleVerify";
 import type {
   CreateUserDTO,
   LoginDTO,
@@ -86,6 +88,69 @@ export class UserService {
         updatedAt: user.updatedAt,
       },
     };
+  }
+
+  /**
+   * Sign in (or sign up) with a verified Google ID token. Finds the account by
+   * email; if none exists, creates one from the Google profile with no usable
+   * password (Google users authenticate via Google only). New accounts go
+   * through placement like any other signup.
+   */
+  async loginWithGoogle(idToken: string): Promise<AuthResponse> {
+    const profile = await verifyGoogleIdToken(idToken);
+    if (!profile) throw new AuthenticationError("Google sign-in failed. Please try again.");
+
+    let user = await this.userRepository.findByEmail(profile.email);
+    if (!user) {
+      const username = await this.uniqueUsername(profile.email, profile.name);
+      // No password login for Google accounts — store a random, unguessable hash.
+      const passwordHash = bcrypt.hashSync(
+        `google:${profile.email}:${Date.now()}:${Math.random()}`,
+        SALT_ROUNDS,
+      );
+      const parts = (profile.name ?? "").trim().split(/\s+/).filter(Boolean);
+      const profileData = parts.length
+        ? { firstName: parts[0], lastName: parts.slice(1).join(" ") || parts[0] }
+        : undefined;
+      user = await this.userRepository.create({
+        email: profile.email,
+        username,
+        passwordHash,
+        role: UserRole.STUDENT,
+        profile: profileData,
+        rating: 100,
+        placementRequired: true,
+      });
+    }
+
+    const token = generateToken(user.id, user.role);
+    return {
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        rating: user.rating,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    };
+  }
+
+  /** A free username derived from the Google email/name (e.g. "joel", "joel4821"). */
+  private async uniqueUsername(email: string, name?: string): Promise<string> {
+    const base =
+      (email.split("@")[0] || name || "player")
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, "")
+        .slice(0, 20) || "player";
+    if (!(await this.userRepository.findByUsername(base))) return base;
+    for (let i = 0; i < 25; i++) {
+      const candidate = `${base.slice(0, 16)}${Math.floor(1000 + Math.random() * 9000)}`;
+      if (!(await this.userRepository.findByUsername(candidate))) return candidate;
+    }
+    return `${base.slice(0, 12)}${Date.now().toString().slice(-6)}`;
   }
 
   async getUserById(id: string) {

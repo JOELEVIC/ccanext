@@ -393,6 +393,8 @@ export const typeDefs = `#graphql
   type Mutation {
     register(input: RegisterInput!): AuthPayload!
     login(input: LoginInput!): AuthPayload!
+    "Sign in or sign up with a Google ID token from Google Identity Services."
+    loginWithGoogle(idToken: String!): AuthPayload!
     updateProfile(input: UpdateProfileInput!): Profile!
 
     createGame(input: CreateGameInput!): Game!

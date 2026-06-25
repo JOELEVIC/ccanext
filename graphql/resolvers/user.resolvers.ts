@@ -66,6 +66,14 @@ export const userResolvers = {
       return context.services.userService.authenticateUser(input);
     },
 
+    loginWithGoogle: async (
+      _: unknown,
+      { idToken }: { idToken: string },
+      context: GraphQLContextWithServices
+    ) => {
+      return context.services.userService.loginWithGoogle(idToken);
+    },
+
     updateProfile: async (
       _: unknown,
       { input }: { input: Record<string, unknown> },

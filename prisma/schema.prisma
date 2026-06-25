@@ -125,6 +125,8 @@ model Game {
   status         GameStatus    @default(PENDING)
   timeControl    String        // e.g., "10+0", "30+0"
   rated          Boolean       @default(true) // false = casual: no rating change
+  whiteRating    Int?          // each player's rating snapshot when the game was created
+  blackRating    Int?
   analysisJson   Json?
   tournamentId   String?
   tournament     Tournament?   @relation(fields: [tournamentId], references: [id], onDelete: SetNull)

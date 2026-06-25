@@ -93,6 +93,12 @@ export class GameRepository {
     tournamentId?: string;
     rated?: boolean;
   }) {
+    // Snapshot each player's rating at creation so games-list rows can show the
+    // rating you had at the time, not your (later) current rating.
+    const [w, b] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: data.whiteId }, select: { rating: true } }),
+      this.prisma.user.findUnique({ where: { id: data.blackId }, select: { rating: true } }),
+    ]);
     return this.prisma.game.create({
       data: {
         whiteId: data.whiteId,
@@ -100,6 +106,8 @@ export class GameRepository {
         timeControl: data.timeControl,
         tournamentId: data.tournamentId,
         rated: data.rated ?? true,
+        whiteRating: w?.rating ?? null,
+        blackRating: b?.rating ?? null,
         moves: "",
         status: GameStatus.PENDING,
       },

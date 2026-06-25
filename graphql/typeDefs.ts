@@ -108,6 +108,8 @@ export const typeDefs = `#graphql
     result: GameResult
     timeControl: String!
     rated: Boolean!
+    whiteRating: Int
+    blackRating: Int
     analysisJson: String
     tournament: Tournament
     createdAt: DateTime!
@@ -416,5 +418,158 @@ export const typeDefs = `#graphql
     createSchool(input: CreateSchoolInput!): School!
 
     checkPuzzleSolution(puzzleId: ID!, solution: String!): PuzzleSolutionResult!
+  }
+
+  # ===========================================================================
+  # PLACEMENT (auto-rating) — player-facing
+  # ===========================================================================
+  type PlacementStatus {
+    required: Boolean!
+    completedAt: DateTime
+    activeRunId: ID
+  }
+
+  type PlacementRun {
+    id: ID!
+    status: String!
+    startedAt: DateTime!
+  }
+
+  type PlacementEstimate {
+    rating: Int!
+    rd: Int!
+    confidence: Int!
+    resultRating: Int!
+    moveRating: Int!
+    acplRating: Int!
+    accuracyRating: Int!
+    weightedAcpl: Float!
+    meanAccuracy: Float!
+    totalUserMoves: Int!
+    gamesScored: Int!
+  }
+
+  type PlacementSubmitResult {
+    estimate: PlacementEstimate!
+    newRating: Int!
+  }
+
+  input PlacementMoveInput {
+    cpLoss: Float!
+    accuracy: Float!
+    complexity: Float
+  }
+
+  input PlacementGameInput {
+    botId: String!
+    botElo: Int!
+    color: String!
+    score: Float!
+    moves: String
+    userMoves: [PlacementMoveInput!]!
+  }
+
+  # ===========================================================================
+  # ADMIN — separate admin_users auth; gated by the admin token
+  # ===========================================================================
+  enum AdminRole {
+    ROOT
+    ADMIN
+  }
+
+  type AdminUser {
+    id: ID!
+    email: String!
+    role: AdminRole!
+    addedById: ID
+    lastLoginAt: DateTime
+    createdAt: DateTime!
+    pending: Boolean!
+  }
+
+  type AdminAuthPayload {
+    token: String!
+    admin: AdminUser!
+  }
+
+  type AdminCount { label: String!  count: Int! }
+  type AdminDayCount { day: String!  count: Int! }
+  type AdminUserMini { id: ID!  username: String! }
+  type AdminTopPlayer { id: ID!  username: String!  rating: Int!  placementRequired: Boolean! }
+  type AdminRecentUser { id: ID!  username: String!  email: String!  rating: Int!  createdAt: DateTime!  placementRequired: Boolean! }
+  type AdminUsersStat { total: Int!  newLast7: Int!  newLast30: Int! }
+  type AdminPlacementStat { required: Int!  completed: Int!  inProgress: Int! }
+  type AdminGamesStat { total: Int!  pending: Int!  active: Int!  completed: Int!  abandoned: Int! }
+
+  type AdminOverview {
+    users: AdminUsersStat!
+    placement: AdminPlacementStat!
+    games: AdminGamesStat!
+    ratingDistribution: [AdminCount!]!
+    signupsByDay: [AdminDayCount!]!
+    topPlayers: [AdminTopPlayer!]!
+    recentUsers: [AdminRecentUser!]!
+  }
+
+  type AdminUserRow {
+    id: ID!  username: String!  email: String!  role: UserRole!  rating: Int!
+    placementRequired: Boolean!  placementCompletedAt: DateTime  createdAt: DateTime!
+  }
+
+  type AdminUserList {
+    items: [AdminUserRow!]!
+    total: Int!
+    limit: Int!
+    offset: Int!
+  }
+
+  type AdminPlayerRating { rating: Float!  deviation: Float!  volatility: Float!  updatedAt: DateTime! }
+  type AdminProfileLite { firstName: String!  lastName: String!  country: String! }
+
+  type AdminUserDetailUser {
+    id: ID!  username: String!  email: String!  role: UserRole!  rating: Int!
+    placementRequired: Boolean!  placementCompletedAt: DateTime  createdAt: DateTime!
+    playerRating: AdminPlayerRating
+    profile: AdminProfileLite
+  }
+
+  type AdminPlacementRun {
+    id: ID!  status: String!  estimatedRating: Int  estimatedRd: Int  confidence: Float
+    triggeredBy: String!  startedAt: DateTime!  completedAt: DateTime
+  }
+
+  type AdminGameRow {
+    id: ID!  status: String!  result: String  rated: Boolean!  timeControl: String!  createdAt: DateTime!
+    white: AdminUserMini!  black: AdminUserMini!
+  }
+
+  type AdminUserDetail {
+    user: AdminUserDetailUser!
+    placementRuns: [AdminPlacementRun!]!
+    recentGames: [AdminGameRow!]!
+  }
+
+  type AdminRemoveResult { removedId: ID! }
+  type AdminTriggerResult { ok: Boolean!  runId: ID! }
+  type AdminOverrideResult { ok: Boolean!  rating: Int! }
+
+  extend type Query {
+    placementStatus: PlacementStatus!
+    adminMe: AdminUser
+    adminOverview: AdminOverview!
+    adminUsers(search: String, limit: Int, offset: Int): AdminUserList!
+    adminUser(userId: ID!): AdminUserDetail!
+    adminAdmins: [AdminUser!]!
+  }
+
+  extend type Mutation {
+    startPlacement: PlacementRun!
+    savePlacementProgress(runId: ID!, games: [PlacementGameInput!]!): PlacementRun!
+    submitPlacement(runId: ID!, games: [PlacementGameInput!]!): PlacementSubmitResult!
+    adminLogin(email: String!, password: String!): AdminAuthPayload!
+    adminAddAdmin(email: String!): AdminUser!
+    adminRemoveAdmin(adminId: ID!): AdminRemoveResult!
+    adminTriggerPlacement(userId: ID!): AdminTriggerResult!
+    adminOverrideRating(userId: ID!, rating: Int!): AdminOverrideResult!
   }
 `;

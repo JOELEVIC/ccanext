@@ -9,6 +9,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),
+  // Admin-panel auth uses a separate signing key so admin tokens and player tokens
+  // can never validate against each other. Optional: if unset we derive a distinct
+  // key from JWT_SECRET (works out of the box; set a dedicated value in prod).
+  ADMIN_JWT_SECRET: z.string().min(32).optional(),
+  ADMIN_JWT_EXPIRES_IN: z.string().default("12h"),
   SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL"),
   SUPABASE_ANON_KEY: z.string().min(1, "SUPABASE_ANON_KEY is required"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
@@ -44,6 +49,12 @@ export const config = {
   isTest: env.NODE_ENV === "test",
   database: { url: env.DATABASE_URL },
   jwt: { secret: env.JWT_SECRET, expiresIn: env.JWT_EXPIRES_IN },
+  adminJwt: {
+    // Fall back to a key derived from JWT_SECRET so admin auth works without extra
+    // config; the distinct suffix means admin tokens never validate as player tokens.
+    secret: env.ADMIN_JWT_SECRET ?? `${env.JWT_SECRET}::admin`,
+    expiresIn: env.ADMIN_JWT_EXPIRES_IN,
+  },
   supabase: { url: env.SUPABASE_URL, anonKey: env.SUPABASE_ANON_KEY },
   cors: { origin: env.CORS_ORIGIN },
 } as const;

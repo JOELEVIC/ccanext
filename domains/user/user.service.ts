@@ -39,6 +39,10 @@ export class UserService {
       role: data.role,
       schoolId: data.schoolId,
       profile: data.profile,
+      // New accounts seed at an artificial rating of 100 and must complete placement;
+      // the placement run then overwrites this with the estimated Elo.
+      rating: 100,
+      placementRequired: true,
     });
 
     const token = generateToken(user.id, user.role);

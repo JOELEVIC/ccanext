@@ -36,6 +36,13 @@ model User {
   playerRating           PlayerRating?
   challengesCreated      Challenge[]            @relation("ChallengeCreator")
   challengesReceived     Challenge[]            @relation("ChallengeOpponent")
+  placementRuns          PlacementRun[]
+
+  // Placement / auto-rating. New accounts seed at rating 100 with placementRequired = true;
+  // a prompt recurs until placement completes once, then the computed rating overwrites this.
+  // Admins can flip placementRequired back to true to re-run placement for any user.
+  placementRequired    Boolean   @default(true)
+  placementCompletedAt DateTime?
 
   @@index([email])
   @@index([username])
@@ -56,6 +63,62 @@ model PlayerRating {
   updatedAt  DateTime @updatedAt
 
   @@map("player_ratings")
+}
+
+// One placement (auto-rating) attempt. Stores the adaptive-ladder progress and raw
+// per-game move data + per-move evals so the estimate can be audited and re-run
+// server-side from the admin dashboard. `estimatedRating` is the fused result that
+// overwrites the player's rating on COMPLETE.
+model PlacementRun {
+  id              String          @id @default(uuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status          PlacementStatus @default(IN_PROGRESS)
+  gamesJson       Json? // [{ botId, botElo, color, result, moves, perMove:[{cpLoss,accuracy,complexity}] }]
+  estimatedRating Int?
+  estimatedRd     Int?
+  confidence      Float? // posterior σ at finalize (smaller = more confident)
+  triggeredBy     String          @default("self") // "self" | "admin:<adminId>"
+  startedAt       DateTime        @default(now())
+  completedAt     DateTime?
+  updatedAt       DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("placement_runs")
+}
+
+enum PlacementStatus {
+  IN_PROGRESS
+  COMPLETE
+  ABANDONED
+
+  @@map("placement_status")
+}
+
+// Admin accounts are entirely separate from player `users`. Seeded with
+// mrsinsj48@gmail.com as the un-removable ROOT. A row with an empty passwordHash
+// is "pending bootstrap": the first successful login sets the password (this also
+// serves as the invite flow for admins ROOT adds).
+model AdminUser {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @default("")
+  role         AdminRole @default(ADMIN)
+  addedById    String? // AdminUser.id that invited this admin (null for ROOT seed)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([email])
+  @@map("admin_users")
+}
+
+enum AdminRole {
+  ROOT
+  ADMIN
+
+  @@map("admin_role")
 }
 
 enum UserRole {

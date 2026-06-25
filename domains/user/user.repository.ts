@@ -45,6 +45,8 @@ export class UserRepository {
     passwordHash: string;
     role: UserRole;
     schoolId?: string;
+    rating?: number;
+    placementRequired?: boolean;
     profile?: {
       firstName: string;
       lastName: string;
@@ -59,6 +61,12 @@ export class UserRepository {
         passwordHash: data.passwordHash,
         role: data.role,
         schoolId: data.schoolId,
+        // Only override the schema defaults when explicitly provided (signup passes
+        // rating: 100 + placementRequired: true; other callers keep the defaults).
+        ...(data.rating !== undefined ? { rating: data.rating } : {}),
+        ...(data.placementRequired !== undefined
+          ? { placementRequired: data.placementRequired }
+          : {}),
         profile: data.profile
           ? { create: data.profile }
           : undefined,

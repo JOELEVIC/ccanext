@@ -286,12 +286,14 @@ export class GameService {
 
   private async applyGlickoRatings(game: {
     result: GameResult | null;
+    rated?: boolean;
     whiteId: string;
     blackId: string;
     white: { rating: number };
     black: { rating: number };
   }) {
     if (!game.result) return;
+    if (game.rated === false) return; // casual game — outcome recorded, ratings untouched
 
     const whiteState = await this.getOrInitRating(game.whiteId, game.white.rating);
     const blackState = await this.getOrInitRating(game.blackId, game.black.rating);

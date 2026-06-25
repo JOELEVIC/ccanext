@@ -107,10 +107,41 @@ export const typeDefs = `#graphql
     status: GameStatus!
     result: GameResult
     timeControl: String!
+    rated: Boolean!
     analysisJson: String
     tournament: Tournament
     createdAt: DateTime!
     updatedAt: DateTime!
+  }
+
+  enum ChallengeStatus {
+    OPEN
+    ACCEPTED
+    DECLINED
+    CANCELLED
+    EXPIRED
+  }
+
+  type Challenge {
+    id: ID!
+    creator: User!
+    "Null for an open invite link that anyone signed-in can accept."
+    opponent: User
+    creatorColor: String!
+    timeControl: String!
+    rated: Boolean!
+    status: ChallengeStatus!
+    game: Game
+    expiresAt: DateTime
+    createdAt: DateTime!
+  }
+
+  input CreateChallengeInput {
+    "Omit for an open invite link; provide to challenge a specific player."
+    opponentId: ID
+    creatorColor: String!
+    timeControl: String!
+    rated: Boolean!
   }
 
   type Tournament {
@@ -325,6 +356,13 @@ export const typeDefs = `#graphql
     myGames(status: GameStatus): [Game!]!
     liveGames: [Game!]!
 
+    "A single challenge by id (for an invite link's accept page)."
+    challenge(id: ID!): Challenge
+    "Open challenges I sent or that are addressed to me."
+    myChallenges: [Challenge!]!
+    "Public open invites anyone can accept (excludes my own)."
+    openChallenges: [Challenge!]!
+
     tournament(id: ID!): Tournament
     schoolTournaments(schoolId: ID!): [Tournament!]!
     tournaments(status: TournamentStatus): [Tournament!]!
@@ -362,6 +400,13 @@ export const typeDefs = `#graphql
     "Finalize a live game decided on the gameplay server: persist result/moves + apply Glicko-2 ratings. A null result aborts (voids) the game. Idempotent."
     recordGameResult(gameId: ID!, result: GameResult, reason: String, moves: String): Game!
     recordGameCompleted(gameId: ID!): GameXpResult!
+
+    "Create a challenge — direct (with opponentId) or an open invite link."
+    createChallenge(input: CreateChallengeInput!): Challenge!
+    "Accept an open challenge: creates the game and returns it."
+    acceptChallenge(challengeId: ID!): Game!
+    declineChallenge(challengeId: ID!): Challenge!
+    cancelChallenge(challengeId: ID!): Challenge!
 
     createTournament(input: CreateTournamentInput!): Tournament!
     joinTournament(tournamentId: ID!): Tournament!

@@ -91,6 +91,7 @@ export class GameRepository {
     blackId: string;
     timeControl: string;
     tournamentId?: string;
+    rated?: boolean;
   }) {
     return this.prisma.game.create({
       data: {
@@ -98,6 +99,7 @@ export class GameRepository {
         blackId: data.blackId,
         timeControl: data.timeControl,
         tournamentId: data.tournamentId,
+        rated: data.rated ?? true,
         moves: "",
         status: GameStatus.PENDING,
       },

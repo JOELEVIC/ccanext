@@ -6,8 +6,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Direct (non-pooled) connection used for `prisma migrate deploy` on deploy.
+  // Falls back to DATABASE_URL locally if DIRECT_URL is unset.
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================================
@@ -34,6 +37,8 @@ model User {
   puzzleStats            PuzzleUserStats?
   courseProgress         CourseProgress[]
   playerRating           PlayerRating?
+  challengesCreated      Challenge[]            @relation("ChallengeCreator")
+  challengesReceived     Challenge[]            @relation("ChallengeOpponent")
 
   @@index([email])
   @@index([username])
@@ -122,10 +127,12 @@ model Game {
   result         GameResult?
   status         GameStatus    @default(PENDING)
   timeControl    String        // e.g., "10+0", "30+0"
+  rated          Boolean       @default(true) // false = casual: no rating change
   analysisJson   Json?
   tournamentId   String?
   tournament     Tournament?   @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
   gameXpAwards   GameXpAward[]
+  challenge      Challenge?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -147,6 +154,41 @@ model GameXpAward {
   @@index([gameId])
   @@index([userId])
   @@map("game_xp_awards")
+}
+
+// A challenge / invite. A direct challenge names an opponent; an open one
+// (opponentId null) is a shareable invite link anyone signed-in can accept.
+// On accept, a Game is created and linked via gameId.
+model Challenge {
+  id           String          @id @default(uuid())
+  creatorId    String
+  creator      User            @relation("ChallengeCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  opponentId   String?
+  opponent     User?           @relation("ChallengeOpponent", fields: [opponentId], references: [id], onDelete: Cascade)
+  creatorColor String          // "white" | "black" | "random"
+  timeControl  String
+  rated        Boolean         @default(true)
+  status       ChallengeStatus @default(OPEN)
+  gameId       String?         @unique
+  game         Game?           @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  expiresAt    DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([creatorId])
+  @@index([opponentId])
+  @@index([status])
+  @@map("challenges")
+}
+
+enum ChallengeStatus {
+  OPEN
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+
+  @@map("challenge_status")
 }
 
 enum GameStatus {

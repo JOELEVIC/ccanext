@@ -7,6 +7,7 @@ import type { ChallengeService } from "@/domains/challenge/challenge.service";
 import type { PlacementService } from "@/domains/placement/placement.service";
 import type { AdminService } from "@/domains/admin/admin.service";
 import type { ActivityService } from "@/domains/activity/activity.service";
+import type { TournamentRoundService } from "@/domains/tournament/round.service";
 import { prisma } from "@/lib/prisma";
 import { optionalAuthenticate, optionalAdminAuthenticate } from "@/lib/auth";
 import type { AdminAuthContext } from "@/lib/auth";
@@ -19,6 +20,7 @@ import { ChallengeService as ChallengeServiceClass } from "@/domains/challenge/c
 import { PlacementService as PlacementServiceClass } from "@/domains/placement/placement.service";
 import { AdminService as AdminServiceClass } from "@/domains/admin/admin.service";
 import { ActivityService as ActivityServiceClass } from "@/domains/activity/activity.service";
+import { TournamentRoundService as TournamentRoundServiceClass } from "@/domains/tournament/round.service";
 import type { AuthContext } from "@/utils/types";
 
 export interface GraphQLContextWithServices {
@@ -35,6 +37,7 @@ export interface GraphQLContextWithServices {
     placementService: PlacementService;
     adminService: AdminService;
     activityService: ActivityService;
+    tournamentRoundService: TournamentRoundService;
   };
 }
 
@@ -58,6 +61,7 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       placementService: new PlacementServiceClass(prisma),
       adminService: new AdminServiceClass(prisma),
       activityService: new ActivityServiceClass(prisma),
+      tournamentRoundService: new TournamentRoundServiceClass(prisma),
     },
   };
 }

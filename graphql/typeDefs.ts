@@ -666,4 +666,49 @@ export const typeDefs = `#graphql
     adminArchiveActivity(id: ID!): Activity!
     adminDeleteActivity(id: ID!): AdminRemoveResult!
   }
+
+  # ===========================================================================
+  # TOURNAMENT ROUNDS / PAIRINGS / STANDINGS (pro engine)
+  # ===========================================================================
+  type TournamentPairing {
+    id: ID!
+    boardNumber: Int!
+    whiteUserId: String
+    blackUserId: String
+    gameId: String
+    result: String # "1-0" | "0-1" | "1/2-1/2" | "bye" | null
+  }
+
+  type TournamentRound {
+    id: ID!
+    number: Int!
+    status: String! # PENDING | ONGOING | COMPLETED
+    startedAt: DateTime
+    completedAt: DateTime
+    pairings: [TournamentPairing!]!
+  }
+
+  type TournamentStanding {
+    rank: Int!
+    userId: ID!
+    username: String!
+    rating: Int!
+    score: Float!
+    buchholz: Float!
+    sonnebornBerger: Float!
+    byes: Int!
+    withdrawn: Boolean!
+  }
+
+  extend type Query {
+    tournamentRounds(tournamentId: ID!): [TournamentRound!]!
+    tournamentStandings(tournamentId: ID!): [TournamentStanding!]!
+  }
+
+  extend type Mutation {
+    adminTournamentStartRound(tournamentId: ID!): TournamentRound!
+    adminTournamentRecordResult(pairingId: ID!, result: String!): TournamentPairing!
+    adminTournamentCompleteRound(roundId: ID!): TournamentRound!
+    adminTournamentFinalize(tournamentId: ID!): [TournamentStanding!]!
+  }
 `;

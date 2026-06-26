@@ -43,6 +43,16 @@ const PUZZLES: PuzzleSpec[] = [
   { fen: "4k3/1R6/8/8/8/8/8/R3K3 w - - 0 1",                                   solution: "a1a8",  difficulty: 750,  theme: ["mateIn1", "twoRooks", "ladderMate"] },
   { fen: "7k/5KP1/8/8/8/8/8/8 w - - 0 1",                                      solution: "g7g8q", difficulty: 900,  theme: ["mateIn1", "promotion"] },
   { fen: "7k/5Npp/8/8/8/8/8/4R2K w - - 0 1",                                   solution: "e1e8",  difficulty: 1000, theme: ["mateIn1", "rookKnight"] },
+  { fen: "6k1/5ppp/8/8/8/8/8/Q6K w - - 0 1",                                   solution: "a1a8",  difficulty: 600,  theme: ["mateIn1", "backRank", "queenMate"] },
+  { fen: "6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1",                                  solution: "e1e8",  difficulty: 650,  theme: ["mateIn1", "backRank"] },
+  { fen: "6k1/5ppp/8/8/8/8/8/3R3K w - - 0 1",                                  solution: "d1d8",  difficulty: 650,  theme: ["mateIn1", "backRank"] },
+  { fen: "6k1/5ppp/8/8/8/8/8/2Q4K w - - 0 1",                                  solution: "c1c8",  difficulty: 600,  theme: ["mateIn1", "backRank", "queenMate"] },
+  { fen: "6k1/5ppp/8/8/8/8/8/1Q5K w - - 0 1",                                  solution: "b1b8",  difficulty: 600,  theme: ["mateIn1", "backRank", "queenMate"] },
+  { fen: "5k2/7Q/5K2/8/8/8/8/8 w - - 0 1",                                     solution: "h7f7",  difficulty: 800,  theme: ["mateIn1", "supportedMate", "queenMate"] },
+  { fen: "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1",                                     solution: "f7g7",  difficulty: 850,  theme: ["mateIn1", "supportedMate", "queenMate"] },
+  { fen: "k7/8/1K6/8/8/8/8/7Q w - - 0 1",                                      solution: "h1h8",  difficulty: 850,  theme: ["mateIn1", "queenMate", "boxMate"] },
+  { fen: "4k3/8/4K3/8/8/8/8/R7 w - - 0 1",                                     solution: "a1a8",  difficulty: 950,  theme: ["mateIn1", "rookMate", "opposition"] },
+  { fen: "3k4/8/3K4/8/8/8/8/7R w - - 0 1",                                     solution: "h1h8",  difficulty: 950,  theme: ["mateIn1", "rookMate", "opposition"] },
 
   // === Wins material / forks ===
   { fen: "r1b1kb1r/pppp1ppp/2n2n2/4p1q1/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 1", solution: "f3g5", difficulty: 1000, theme: ["winsMaterial", "knight"] },

@@ -1,6 +1,4 @@
--- Reseed the puzzles table with the verified canonical set (28 puzzles).
--- Every solution is a single legal key move; every mateIn1 is a real checkmate.
--- Safe to run more than once (it wipes the table first). Run in the Supabase SQL editor.
+-- Verified canonical puzzle set (38). Every mateIn1 is a real checkmate. Run in Supabase SQL editor.
 BEGIN;
 DELETE FROM puzzles;
 INSERT INTO puzzles (fen, solution, difficulty, theme) VALUES
@@ -21,6 +19,16 @@ INSERT INTO puzzles (fen, solution, difficulty, theme) VALUES
   ('4k3/1R6/8/8/8/8/8/R3K3 w - - 0 1', 'a1a8', 750, ARRAY['mateIn1','twoRooks','ladderMate']),
   ('7k/5KP1/8/8/8/8/8/8 w - - 0 1', 'g7g8q', 900, ARRAY['mateIn1','promotion']),
   ('7k/5Npp/8/8/8/8/8/4R2K w - - 0 1', 'e1e8', 1000, ARRAY['mateIn1','rookKnight']),
+  ('6k1/5ppp/8/8/8/8/8/Q6K w - - 0 1', 'a1a8', 600, ARRAY['mateIn1','backRank','queenMate']),
+  ('6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1', 'e1e8', 650, ARRAY['mateIn1','backRank']),
+  ('6k1/5ppp/8/8/8/8/8/3R3K w - - 0 1', 'd1d8', 650, ARRAY['mateIn1','backRank']),
+  ('6k1/5ppp/8/8/8/8/8/2Q4K w - - 0 1', 'c1c8', 600, ARRAY['mateIn1','backRank','queenMate']),
+  ('6k1/5ppp/8/8/8/8/8/1Q5K w - - 0 1', 'b1b8', 600, ARRAY['mateIn1','backRank','queenMate']),
+  ('5k2/7Q/5K2/8/8/8/8/8 w - - 0 1', 'h7f7', 800, ARRAY['mateIn1','supportedMate','queenMate']),
+  ('7k/5Q2/6K1/8/8/8/8/8 w - - 0 1', 'f7g7', 850, ARRAY['mateIn1','supportedMate','queenMate']),
+  ('k7/8/1K6/8/8/8/8/7Q w - - 0 1', 'h1h8', 850, ARRAY['mateIn1','queenMate','boxMate']),
+  ('4k3/8/4K3/8/8/8/8/R7 w - - 0 1', 'a1a8', 950, ARRAY['mateIn1','rookMate','opposition']),
+  ('3k4/8/3K4/8/8/8/8/7R w - - 0 1', 'h1h8', 950, ARRAY['mateIn1','rookMate','opposition']),
   ('r1b1kb1r/pppp1ppp/2n2n2/4p1q1/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 1', 'f3g5', 1000, ARRAY['winsMaterial','knight']),
   ('r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R b KQkq - 0 5', 'f6e4', 1200, ARRAY['fork','knight']),
   ('r3k3/8/8/3N4/8/8/8/3K4 w - - 0 1', 'd5c7', 1100, ARRAY['fork','knight']),

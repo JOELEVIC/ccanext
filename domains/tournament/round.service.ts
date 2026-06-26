@@ -1,5 +1,5 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
-import { RoundStatus } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
+import { RoundStatus, GameStatus } from "@prisma/client";
 import { NotFoundError, ValidationError } from "@/utils/types";
 import {
   swissPairings,
@@ -122,58 +122,83 @@ export class TournamentRoundService {
       data: { tournamentId, number: roundNumber, status: RoundStatus.ONGOING, startedAt: new Date() },
     });
 
-    const ops: Prisma.PrismaPromise<unknown>[] = [];
-    pairings.forEach((pr, i) => {
-      const isBye = pr.blackUserId === null;
-      ops.push(
-        this.prisma.tournamentPairing.create({
-          data: {
-            roundId: round.id,
-            tournamentId,
-            boardNumber: i + 1,
-            whiteUserId: pr.whiteUserId,
-            blackUserId: pr.blackUserId,
-            result: isBye ? "bye" : null,
-          },
-        })
-      );
-      // White player's pairing state.
-      const white = loaded.find((l) => l.participant.userId === pr.whiteUserId);
-      if (white) {
-        ops.push(
-          this.prisma.tournamentParticipant.update({
-            where: { id: white.participant.id },
-            data: isBye
-              ? {
-                  byes: { increment: 1 },
-                  // A bye is worth a full point in Swiss/Arena/Round-Robin (not Knockout).
-                  score: format === "KNOCKOUT" ? undefined : { increment: 1 },
-                  colorHistory: { push: "w" },
-                }
-              : { colorHistory: { push: "w" }, opponentIds: { push: pr.blackUserId! } },
-          })
-        );
-      }
-      if (!isBye) {
-        const black = loaded.find((l) => l.participant.userId === pr.blackUserId);
-        if (black) {
-          ops.push(
-            this.prisma.tournamentParticipant.update({
-              where: { id: black.participant.id },
-              data: { colorHistory: { push: "b" }, opponentIds: { push: pr.whiteUserId } },
-            })
-          );
-        }
-      }
-    });
-    ops.push(
-      this.prisma.tournament.update({
-        where: { id: tournamentId },
-        data: { currentRound: roundNumber, status: "ONGOING" },
-      })
-    );
+    // Time control for the live games (must be "min+inc"); fall back to 10+0.
+    const timeControl = /^\d+\+\d+$/.test(t.arenaTimeControl) ? t.arenaTimeControl : "10+0";
 
-    await this.prisma.$transaction(ops);
+    await this.prisma.$transaction(
+      async (tx) => {
+        for (let i = 0; i < pairings.length; i++) {
+          const pr = pairings[i];
+          const isBye = pr.blackUserId === null;
+
+          // For every real board, create a playable live game and link it to the
+          // pairing. Players open it at /game/<id> and play on the site; the
+          // result flows back automatically via recordGameResult → syncGameResult.
+          // (Byes get no game. A no-show can still be settled manually in the
+          //  console as an override.)
+          let gameId: string | null = null;
+          if (!isBye) {
+            const game = await tx.game.create({
+              data: {
+                whiteId: pr.whiteUserId,
+                blackId: pr.blackUserId!,
+                timeControl,
+                tournamentId,
+                rated: t.isRated,
+                whiteRating: stateById.get(pr.whiteUserId)?.rating ?? null,
+                blackRating: stateById.get(pr.blackUserId!)?.rating ?? null,
+                moves: "",
+                status: GameStatus.PENDING,
+              },
+            });
+            gameId = game.id;
+          }
+
+          await tx.tournamentPairing.create({
+            data: {
+              roundId: round.id,
+              tournamentId,
+              boardNumber: i + 1,
+              whiteUserId: pr.whiteUserId,
+              blackUserId: pr.blackUserId,
+              gameId,
+              result: isBye ? "bye" : null,
+            },
+          });
+
+          // White player's pairing state.
+          const white = loaded.find((l) => l.participant.userId === pr.whiteUserId);
+          if (white) {
+            await tx.tournamentParticipant.update({
+              where: { id: white.participant.id },
+              data: isBye
+                ? {
+                    byes: { increment: 1 },
+                    // A bye is worth a full point in Swiss/Arena/Round-Robin (not Knockout).
+                    score: format === "KNOCKOUT" ? undefined : { increment: 1 },
+                    colorHistory: { push: "w" },
+                  }
+                : { colorHistory: { push: "w" }, opponentIds: { push: pr.blackUserId! } },
+            });
+          }
+          if (!isBye) {
+            const black = loaded.find((l) => l.participant.userId === pr.blackUserId);
+            if (black) {
+              await tx.tournamentParticipant.update({
+                where: { id: black.participant.id },
+                data: { colorHistory: { push: "b" }, opponentIds: { push: pr.whiteUserId } },
+              });
+            }
+          }
+        }
+
+        await tx.tournament.update({
+          where: { id: tournamentId },
+          data: { currentRound: roundNumber, status: "ONGOING" },
+        });
+      },
+      { timeout: 20000 }
+    );
     return this.getRound(round.id);
   }
 
@@ -219,6 +244,43 @@ export class TournamentRoundService {
       }),
     ]);
     return this.prisma.tournamentPairing.findUnique({ where: { id: pairingId } });
+  }
+
+  /**
+   * A linked live game finished on the gameplay server → record its result on
+   * the pairing and auto-complete the round once every board is in. Idempotent
+   * (recordResult reverses any prior result first). Called from the
+   * recordGameResult resolver after the game is marked COMPLETED.
+   */
+  async syncGameResult(gameId: string, gameResult: string) {
+    const pairing = await this.prisma.tournamentPairing.findFirst({ where: { gameId } });
+    if (!pairing || pairing.result === "bye") return null;
+    const map: Record<string, string> = {
+      WHITE_WIN: "1-0",
+      BLACK_WIN: "0-1",
+      DRAW: "1/2-1/2",
+      STALEMATE: "1/2-1/2",
+    };
+    const r = map[gameResult];
+    if (!r) return null; // aborted/void game — leave the board open for a manual call
+    await this.recordResult(pairing.id, r);
+    await this.maybeCompleteRound(pairing.roundId);
+    return pairing.id;
+  }
+
+  /** Auto-complete a round once every board has a result. */
+  private async maybeCompleteRound(roundId: string) {
+    const round = await this.prisma.tournamentRound.findUnique({
+      where: { id: roundId },
+      include: { pairings: true },
+    });
+    if (!round || round.status === "COMPLETED") return;
+    if (round.pairings.every((p) => !!p.result)) {
+      await this.prisma.tournamentRound.update({
+        where: { id: roundId },
+        data: { status: RoundStatus.COMPLETED, completedAt: new Date() },
+      });
+    }
   }
 
   async completeRound(roundId: string) {

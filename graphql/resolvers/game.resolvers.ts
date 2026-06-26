@@ -125,13 +125,26 @@ export const gameResolvers = {
           extensions: { code: "UNAUTHENTICATED" },
         });
       }
-      return context.services.gameService.recordGameResult({
+      const game = await context.services.gameService.recordGameResult({
         gameId,
         userId: context.user.userId,
         result: result ?? null,
         reason,
         moves,
       });
+
+      // If this was a tournament board, mirror the outcome onto its pairing and
+      // (auto-)advance the round. Best-effort: never let a tournament sync error
+      // fail the core result recording.
+      const g = game as { id: string; status?: string; result?: string | null; tournamentId?: string | null };
+      if (g.tournamentId && g.status === "COMPLETED" && g.result) {
+        try {
+          await context.services.tournamentRoundService.syncGameResult(g.id, g.result);
+        } catch (err) {
+          console.error("[recordGameResult] tournament pairing sync failed:", err);
+        }
+      }
+      return game;
     },
 
     recordGameCompleted: async (

@@ -123,5 +123,16 @@ export const adminResolvers = {
         context.services.adminService.overrideRating(admin.adminId, userId, rating)
       );
     },
+
+    adminUpdateUsername: async (
+      _: unknown,
+      { userId, username }: { userId: string; username: string },
+      context: GraphQLContextWithServices
+    ) => {
+      const admin = requireAdmin(context);
+      return adminCall(() =>
+        context.services.adminService.updateUsername(admin.adminId, userId, username)
+      );
+    },
   },
 };

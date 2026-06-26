@@ -340,4 +340,25 @@ export class AdminService {
     ]);
     return { ok: true, rating: r };
   }
+
+  /** Rename a player. Same handle rule as signup; case-insensitive uniqueness. */
+  async updateUsername(adminId: string, userId: string, rawUsername: string) {
+    await this.requireAdmin(adminId);
+    const username = (rawUsername ?? "").trim();
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+      throw new ValidationError(
+        "Username must be 3–20 characters — letters, numbers and underscores only (no spaces).",
+      );
+    }
+    const clash = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: "insensitive" }, NOT: { id: userId } },
+      select: { id: true },
+    });
+    if (clash) throw new ValidationError(`Username "${username}" is already taken.`);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { username },
+      select: { id: true, username: true },
+    });
+  }
 }

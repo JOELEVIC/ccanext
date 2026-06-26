@@ -145,16 +145,25 @@ export class UserService {
     };
   }
 
-  /** A free username derived from the Google email/name (e.g. "joel", "joel4821"). */
+  /**
+   * A free, valid username derived from a Google email/name. Separators become
+   * underscores (not deleted) and a number is appended until it's free:
+   *   "john.doe@gmail.com"            -> "john_doe"
+   *   "albert.einstein@…" (taken)     -> "albert_einstein2", "…3", …
+   * The result always satisfies the username rule (3–20, [A-Za-z0-9_]).
+   */
   private async uniqueUsername(email: string, name?: string): Promise<string> {
-    const base =
-      (email.split("@")[0] || name || "player")
-        .toLowerCase()
-        .replace(/[^a-z0-9_]/g, "")
-        .slice(0, 20) || "player";
+    let base = (email.split("@")[0] || name || "player")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_") // join dots / plus / etc. with a single underscore
+      .replace(/_{2,}/g, "_")
+      .replace(/^_+|_+$/g, "");
+    if (base.length < 3) base = `${base}player`;
+    base = base.slice(0, 16) || "player";
+
     if (!(await this.userRepository.findByUsername(base))) return base;
-    for (let i = 0; i < 25; i++) {
-      const candidate = `${base.slice(0, 16)}${Math.floor(1000 + Math.random() * 9000)}`;
+    for (let n = 2; n < 1000; n++) {
+      const candidate = `${base.slice(0, 20 - String(n).length)}${n}`;
       if (!(await this.userRepository.findByUsername(candidate))) return candidate;
     }
     return `${base.slice(0, 12)}${Date.now().toString().slice(-6)}`;

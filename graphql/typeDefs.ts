@@ -578,6 +578,7 @@ export const typeDefs = `#graphql
   type AdminRemoveResult { removedId: ID! }
   type AdminTriggerResult { ok: Boolean!  runId: ID! }
   type AdminOverrideResult { ok: Boolean!  rating: Int! }
+  type AdminUsernameResult { id: ID!  username: String! }
 
   # Step 1 of the two-step login. mode = "SET_PASSWORD" (provisioned admin, no
   # password yet → first-time setup) or "PASSWORD" (normal prompt).
@@ -602,6 +603,7 @@ export const typeDefs = `#graphql
     adminRemoveAdmin(adminId: ID!): AdminRemoveResult!
     adminTriggerPlacement(userId: ID!): AdminTriggerResult!
     adminOverrideRating(userId: ID!, rating: Int!): AdminOverrideResult!
+    adminUpdateUsername(userId: ID!, username: String!): AdminUsernameResult!
   }
 
   # ===========================================================================

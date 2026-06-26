@@ -1,0 +1,35 @@
+-- Reseed the puzzles table with the verified canonical set (28 puzzles).
+-- Every solution is a single legal key move; every mateIn1 is a real checkmate.
+-- Safe to run more than once (it wipes the table first). Run in the Supabase SQL editor.
+BEGIN;
+DELETE FROM puzzles;
+INSERT INTO puzzles (fen, solution, difficulty, theme) VALUES
+  ('rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 2', 'd8h4', 600, ARRAY['mateIn1','fool']),
+  ('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1', 'a1a8', 700, ARRAY['mateIn1','backRank']),
+  ('6k1/5ppp/8/8/8/8/3Q1PPP/6K1 w - - 0 1', 'd2d8', 1100, ARRAY['mateIn1','queenMate','backRank']),
+  ('r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4', 'h5f7', 900, ARRAY['mateIn1','scholarsMate']),
+  ('6rk/6pp/7N/8/8/8/8/7K w - - 0 1', 'h6f7', 1500, ARRAY['mateIn1','smotheredMate']),
+  ('7k/8/5K2/8/8/8/8/6Q1 w - - 0 1', 'g1g7', 900, ARRAY['mateIn1','endgame']),
+  ('7k/5Npp/8/8/8/8/8/4Q2K w - - 0 1', 'e1e8', 1100, ARRAY['mateIn1','knight']),
+  ('7k/6p1/6KQ/8/8/8/8/8 w - - 0 1', 'h6g7', 1300, ARRAY['mateIn1','supportedMate']),
+  ('6k1/5ppp/8/8/8/8/5PPP/R3R1K1 w - - 0 1', 'a1a8', 800, ARRAY['mateIn1','backRank']),
+  ('6k1/5ppp/8/8/8/8/5PPP/4Q1K1 w - - 0 1', 'e1e8', 700, ARRAY['mateIn1','backRank','queenMate']),
+  ('6k1/5ppp/8/8/8/8/8/R6K w - - 0 1', 'a1a8', 650, ARRAY['mateIn1','backRank']),
+  ('5k2/8/5K2/8/8/8/8/7Q w - - 0 1', 'h1h8', 850, ARRAY['mateIn1','queenMate','boxMate']),
+  ('4k3/8/4K3/8/8/8/8/7R w - - 0 1', 'h1h8', 950, ARRAY['mateIn1','rookMate','opposition']),
+  ('1k6/8/1K6/8/8/8/8/7R w - - 0 1', 'h1h8', 950, ARRAY['mateIn1','rookMate']),
+  ('4k3/1R6/8/8/8/8/8/R3K3 w - - 0 1', 'a1a8', 750, ARRAY['mateIn1','twoRooks','ladderMate']),
+  ('7k/5KP1/8/8/8/8/8/8 w - - 0 1', 'g7g8q', 900, ARRAY['mateIn1','promotion']),
+  ('7k/5Npp/8/8/8/8/8/4R2K w - - 0 1', 'e1e8', 1000, ARRAY['mateIn1','rookKnight']),
+  ('r1b1kb1r/pppp1ppp/2n2n2/4p1q1/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 1', 'f3g5', 1000, ARRAY['winsMaterial','knight']),
+  ('r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R b KQkq - 0 5', 'f6e4', 1200, ARRAY['fork','knight']),
+  ('r3k3/8/8/3N4/8/8/8/3K4 w - - 0 1', 'd5c7', 1100, ARRAY['fork','knight']),
+  ('r3k2r/ppp2ppp/2n5/3qp3/8/2P2N2/PP3PPP/R2QK2R w KQkq - 0 1', 'f3e5', 1400, ARRAY['removeDefender','knight']),
+  ('r1bq1rk1/ppp2ppp/2n2n2/3p4/1bPP4/2N1PN2/PP1B1PPP/R2QKB1R w KQ - 0 1', 'c3d5', 1800, ARRAY['sacrifice','knight']),
+  ('r1bq1rk1/pp1nbppp/2p1pn2/3p4/3P4/3BPN2/PPPN1PPP/R1BQ1RK1 w - - 0 1', 'd3h7', 1700, ARRAY['sacrifice','greekGift']),
+  ('r4rk1/pp3ppp/2nq4/2bp4/4n3/PB3N2/1PP1QPPP/2BR1RK1 w - - 0 1', 'c1h6', 1700, ARRAY['sacrifice','discovery']),
+  ('r1bq1rk1/ppp2ppp/2n5/3P4/2B5/5N2/PP3PPP/RNBQ1RK1 w - - 0 1', 'd5c6', 1600, ARRAY['pawnCapture','openFile']),
+  ('8/8/3k4/8/8/3PK3/8/8 w - - 0 1', 'd3d4', 1400, ARRAY['endgame','opposition']),
+  ('8/4P3/4k3/8/8/8/8/4K3 w - - 0 1', 'e7e8q', 800, ARRAY['endgame','promotion']),
+  ('1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1', 'c1c4', 2000, ARRAY['endgame','lucena','rookEndgame']);
+COMMIT;

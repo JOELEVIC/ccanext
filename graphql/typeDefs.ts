@@ -439,6 +439,8 @@ export const typeDefs = `#graphql
     adminCancelTournament(tournamentId: ID!): Tournament!
 
     createSchool(input: CreateSchoolInput!): School!
+    adminCreateSchool(input: CreateSchoolInput!): School!
+    adminUpdateSchool(id: ID!, input: CreateSchoolInput!): School!
 
     checkPuzzleSolution(puzzleId: ID!, solution: String!): PuzzleSolutionResult!
   }

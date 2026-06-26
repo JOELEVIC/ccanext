@@ -1,6 +1,14 @@
 import { GraphQLError } from "graphql";
 import type { GraphQLContextWithServices } from "@/graphql/context";
 
+function requireAdmin(ctx: GraphQLContextWithServices) {
+  if (!ctx.admin) {
+    throw new GraphQLError("Admin authentication required", {
+      extensions: { code: "ADMIN_UNAUTHENTICATED" },
+    });
+  }
+}
+
 export const schoolResolvers = {
   Query: {
     school: async (
@@ -56,6 +64,25 @@ export const schoolResolvers = {
         });
       }
       return context.services.institutionService.createSchool(input);
+    },
+
+    // Admin school management (admin token; players never reach these).
+    adminCreateSchool: async (
+      _: unknown,
+      { input }: { input: { name: string; region: string } },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return context.services.institutionService.createSchool(input);
+    },
+
+    adminUpdateSchool: async (
+      _: unknown,
+      { id, input }: { id: string; input: { name?: string; region?: string } },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return context.services.institutionService.updateSchool(id, input);
     },
   },
 

@@ -6,6 +6,7 @@ import type { InstitutionService } from "@/domains/institution/institution.servi
 import type { ChallengeService } from "@/domains/challenge/challenge.service";
 import type { PlacementService } from "@/domains/placement/placement.service";
 import type { AdminService } from "@/domains/admin/admin.service";
+import type { ActivityService } from "@/domains/activity/activity.service";
 import { prisma } from "@/lib/prisma";
 import { optionalAuthenticate, optionalAdminAuthenticate } from "@/lib/auth";
 import type { AdminAuthContext } from "@/lib/auth";
@@ -17,6 +18,7 @@ import { InstitutionService as InstitutionServiceClass } from "@/domains/institu
 import { ChallengeService as ChallengeServiceClass } from "@/domains/challenge/challenge.service";
 import { PlacementService as PlacementServiceClass } from "@/domains/placement/placement.service";
 import { AdminService as AdminServiceClass } from "@/domains/admin/admin.service";
+import { ActivityService as ActivityServiceClass } from "@/domains/activity/activity.service";
 import type { AuthContext } from "@/utils/types";
 
 export interface GraphQLContextWithServices {
@@ -32,6 +34,7 @@ export interface GraphQLContextWithServices {
     challengeService: ChallengeService;
     placementService: PlacementService;
     adminService: AdminService;
+    activityService: ActivityService;
   };
 }
 
@@ -54,6 +57,7 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       challengeService: new ChallengeServiceClass(prisma),
       placementService: new PlacementServiceClass(prisma),
       adminService: new AdminServiceClass(prisma),
+      activityService: new ActivityServiceClass(prisma),
     },
   };
 }

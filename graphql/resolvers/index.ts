@@ -9,6 +9,7 @@ import { engineResolvers } from "./engine.resolvers";
 import { challengeResolvers } from "./challenge.resolvers";
 import { placementResolvers } from "./placement.resolvers";
 import { adminResolvers } from "./admin.resolvers";
+import { activityResolvers } from "./activity.resolvers";
 
 const dateTimeScalar = new GraphQLScalarType({
   name: "DateTime",
@@ -70,6 +71,7 @@ export const resolvers = {
     ...challengeResolvers.Query,
     ...placementResolvers.Query,
     ...adminResolvers.Query,
+    ...activityResolvers.Query,
   },
   Mutation: {
     ...userResolvers.Mutation,
@@ -80,7 +82,9 @@ export const resolvers = {
     ...challengeResolvers.Mutation,
     ...placementResolvers.Mutation,
     ...adminResolvers.Mutation,
+    ...activityResolvers.Mutation,
   },
+  Activity: activityResolvers.Activity,
   User: userResolvers.User,
   Profile: userResolvers.Profile,
   UserVariantRating: userResolvers.UserVariantRating,

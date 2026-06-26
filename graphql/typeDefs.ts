@@ -579,4 +579,91 @@ export const typeDefs = `#graphql
     adminTriggerPlacement(userId: ID!): AdminTriggerResult!
     adminOverrideRating(userId: ID!, rating: Int!): AdminOverrideResult!
   }
+
+  # ===========================================================================
+  # COMMUNITY ACTIVITIES — public feed + admin CRUD
+  # ===========================================================================
+  enum ActivityType {
+    ANNOUNCEMENT
+    EVENT_RECAP
+    ARTICLE
+    GALLERY
+    RESULT
+  }
+  enum ActivityStatus {
+    DRAFT
+    PUBLISHED
+    ARCHIVED
+  }
+
+  type ActivityImage {
+    id: ID!
+    url: String!
+    caption: String
+    sortOrder: Int!
+  }
+
+  type Activity {
+    id: ID!
+    slug: String!
+    type: ActivityType!
+    title: String!
+    excerpt: String
+    bodyJson: String # JSON-serialized Tiptap document
+    bodyText: String
+    coverImageUrl: String
+    videoEmbedUrl: String
+    region: String
+    tags: [String!]!
+    status: ActivityStatus!
+    featured: Boolean!
+    eventDate: DateTime
+    publishedAt: DateTime
+    images: [ActivityImage!]!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+  }
+
+  type ActivityFeed {
+    items: [Activity!]!
+    total: Int!
+    limit: Int!
+    offset: Int!
+  }
+
+  input ActivityImageInput {
+    url: String!
+    caption: String
+  }
+
+  input ActivityInput {
+    type: ActivityType
+    title: String!
+    excerpt: String
+    bodyJson: String # JSON string of the Tiptap document
+    bodyText: String
+    coverImageUrl: String
+    videoEmbedUrl: String
+    region: String
+    tags: [String!]
+    eventDate: DateTime
+    featured: Boolean
+    images: [ActivityImageInput!]
+  }
+
+  extend type Query {
+    activities(type: ActivityType, region: String, limit: Int, offset: Int): ActivityFeed!
+    activity(slug: String!): Activity
+    adminActivities(status: ActivityStatus, search: String, limit: Int, offset: Int): ActivityFeed!
+    adminActivity(id: ID!): Activity!
+  }
+
+  extend type Mutation {
+    adminCreateActivity(input: ActivityInput!): Activity!
+    adminUpdateActivity(id: ID!, input: ActivityInput!): Activity!
+    adminPublishActivity(id: ID!): Activity!
+    adminUnpublishActivity(id: ID!): Activity!
+    adminArchiveActivity(id: ID!): Activity!
+    adminDeleteActivity(id: ID!): AdminRemoveResult!
+  }
 `;

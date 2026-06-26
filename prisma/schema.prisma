@@ -293,6 +293,14 @@ model Tournament {
   isRated          Boolean                 @default(true)
   iconType         String?
   prizePoolJson    Json?
+  // Professional-tournament engine (all additive; existing school-scoped, arena
+  // tournaments keep working). `format` stays a String: ARENA | SWISS | ROUND_ROBIN | KNOCKOUT.
+  totalRounds         Int? // planned rounds for SWISS/ROUND_ROBIN/KNOCKOUT (null = arena/open)
+  currentRound        Int               @default(0)
+  tiebreak            String            @default("BUCHHOLZ") // BUCHHOLZ | SONNEBORN_BERGER | NONE
+  registrationOpensAt DateTime?
+  checkInRequired     Boolean           @default(false)
+  rounds              TournamentRound[]
   games            Game[]
   participants     TournamentParticipant[]
   createdAt        DateTime                @default(now())
@@ -320,12 +328,63 @@ model TournamentParticipant {
   userId       String
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   score        Float      @default(0)
+  // Pairing + tiebreak state (additive).
+  colorHistory    String[] @default([]) // ["w","b",...] for color balancing
+  opponentIds     String[] @default([]) // userIds already faced (no-repeat in Swiss)
+  byes            Int      @default(0)
+  checkedIn       Boolean  @default(false)
+  withdrawn       Boolean  @default(false)
+  buchholz        Float    @default(0)
+  sonnebornBerger Float    @default(0)
   createdAt    DateTime   @default(now())
 
   @@unique([tournamentId, userId])
   @@index([tournamentId])
   @@index([userId])
   @@map("tournament_participants")
+}
+
+// A round of a SWISS / ROUND_ROBIN / KNOCKOUT tournament (Arena is round-less).
+model TournamentRound {
+  id           String              @id @default(uuid())
+  tournamentId String
+  tournament   Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  number       Int
+  status       RoundStatus         @default(PENDING)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  pairings     TournamentPairing[]
+  createdAt    DateTime            @default(now())
+
+  @@unique([tournamentId, number])
+  @@index([tournamentId])
+  @@map("tournament_rounds")
+}
+
+// One board: white vs black (blackUserId null = a bye). `gameId` links the live game.
+model TournamentPairing {
+  id           String          @id @default(uuid())
+  roundId      String
+  round        TournamentRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  tournamentId String // denormalized for cheap per-tournament queries
+  boardNumber  Int             @default(1)
+  whiteUserId  String?
+  blackUserId  String? // null = bye for whiteUserId
+  gameId       String?
+  result       String? // "1-0" | "0-1" | "1/2-1/2" | "bye"
+  createdAt    DateTime        @default(now())
+
+  @@index([roundId])
+  @@index([tournamentId])
+  @@map("tournament_pairings")
+}
+
+enum RoundStatus {
+  PENDING
+  ONGOING
+  COMPLETED
+
+  @@map("round_status")
 }
 
 // ============================================================================
@@ -442,4 +501,70 @@ model CourseProgress {
   @@unique([userId, courseId])
   @@index([userId])
   @@map("course_progress")
+}
+
+// ============================================================================
+// COMMUNITY / ACTIVITIES DOMAIN — events, recaps, articles, galleries
+// ============================================================================
+
+// A community post: announcement, event recap, article/blog, photo gallery, or
+// result roundup. Authored in the admin (Tiptap rich body), displayed in the
+// community feed + landing preview. Media: cover/images in Supabase Storage,
+// video via an embed URL (YouTube/Vimeo).
+model Activity {
+  id            String          @id @default(uuid())
+  slug          String          @unique
+  type          ActivityType    @default(ARTICLE)
+  title         String
+  excerpt       String? // short summary for cards
+  bodyJson      Json? // Tiptap document JSON (authoring source of truth)
+  bodyText      String?         @db.Text // plain-text rendering (search / fallback / SEO)
+  coverImageUrl String?
+  videoEmbedUrl String? // YouTube/Vimeo embed
+  region        String? // Cameroon region (Centre, Littoral, Sud-Ouest, …) — null = national
+  tags          String[]        @default([])
+  status        ActivityStatus  @default(DRAFT)
+  featured      Boolean         @default(false) // hero slot in the feed / landing
+  authorAdminId String? // AdminUser.id that wrote it
+  eventDate     DateTime? // for event-type posts (the date the event happened/happens)
+  publishedAt   DateTime?
+  images        ActivityImage[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([type])
+  @@index([featured])
+  @@map("activities")
+}
+
+model ActivityImage {
+  id         String   @id @default(uuid())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  url        String
+  caption    String?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([activityId])
+  @@map("activity_images")
+}
+
+enum ActivityType {
+  ANNOUNCEMENT
+  EVENT_RECAP
+  ARTICLE
+  GALLERY
+  RESULT
+
+  @@map("activity_type")
+}
+
+enum ActivityStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@map("activity_status")
 }

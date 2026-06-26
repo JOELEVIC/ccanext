@@ -7,6 +7,22 @@ export interface CreateTournamentDTO {
   endDate?: Date;
 }
 
+/** Admin create with full professional-tournament configuration. */
+export interface AdminCreateTournamentDTO {
+  name: string;
+  schoolId: string;
+  startDate: Date;
+  endDate?: Date;
+  format?: string; // ARENA | SWISS | ROUND_ROBIN | KNOCKOUT
+  maxPlayers?: number;
+  durationMinutes?: number;
+  chessVariant?: string;
+  arenaTimeControl?: string;
+  totalRounds?: number;
+  tiebreak?: string; // BUCHHOLZ | SONNEBORN_BERGER | NONE
+  isRated?: boolean;
+}
+
 export interface UpdateTournamentDTO {
   name?: string;
   startDate?: Date;

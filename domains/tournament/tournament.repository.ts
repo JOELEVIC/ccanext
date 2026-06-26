@@ -67,6 +67,44 @@ export class TournamentRepository {
     });
   }
 
+  /** Admin create with full configuration; unset optional fields fall back to
+   *  the schema defaults (ARENA / 450 / 3+0 / BUCHHOLZ / rated). */
+  async createFull(data: {
+    name: string;
+    schoolId: string;
+    startDate: Date;
+    endDate?: Date;
+    format?: string;
+    maxPlayers?: number;
+    durationMinutes?: number;
+    chessVariant?: string;
+    arenaTimeControl?: string;
+    totalRounds?: number;
+    tiebreak?: string;
+    isRated?: boolean;
+  }) {
+    return this.prisma.tournament.create({
+      data: {
+        name: data.name,
+        schoolId: data.schoolId,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        ...(data.format ? { format: data.format } : {}),
+        ...(data.maxPlayers != null ? { maxPlayers: data.maxPlayers } : {}),
+        ...(data.durationMinutes != null ? { durationMinutes: data.durationMinutes } : {}),
+        ...(data.chessVariant ? { chessVariant: data.chessVariant } : {}),
+        ...(data.arenaTimeControl ? { arenaTimeControl: data.arenaTimeControl } : {}),
+        ...(data.totalRounds != null ? { totalRounds: data.totalRounds } : {}),
+        ...(data.tiebreak ? { tiebreak: data.tiebreak } : {}),
+        ...(data.isRated != null ? { isRated: data.isRated } : {}),
+      },
+      include: {
+        school: true,
+        participants: { include: { user: { include: { profile: true } } } },
+      },
+    });
+  }
+
   async update(
     id: string,
     data: {

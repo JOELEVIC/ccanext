@@ -2,6 +2,30 @@ import { GraphQLError } from "graphql";
 import type { GraphQLContextWithServices } from "@/graphql/context";
 import type { TournamentStatus } from "@prisma/client";
 
+function requireAdmin(ctx: GraphQLContextWithServices) {
+  if (!ctx.admin) {
+    throw new GraphQLError("Admin authentication required", {
+      extensions: { code: "ADMIN_UNAUTHENTICATED" },
+    });
+  }
+  return ctx.admin;
+}
+
+interface AdminCreateTournamentInput {
+  name: string;
+  schoolId: string;
+  startDate: string;
+  endDate?: string | null;
+  format?: string | null;
+  maxPlayers?: number | null;
+  durationMinutes?: number | null;
+  chessVariant?: string | null;
+  arenaTimeControl?: string | null;
+  totalRounds?: number | null;
+  tiebreak?: string | null;
+  isRated?: boolean | null;
+}
+
 export const tournamentResolvers = {
   Query: {
     tournament: async (
@@ -93,6 +117,56 @@ export const tournamentResolvers = {
         });
       }
       return context.services.tournamentService.completeTournament(tournamentId);
+    },
+
+    // ── Admin management (separate admin token; players never reach these) ────
+    adminCreateTournament: async (
+      _: unknown,
+      { input }: { input: AdminCreateTournamentInput },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return context.services.tournamentService.adminCreateTournament({
+        name: input.name,
+        schoolId: input.schoolId,
+        startDate: new Date(input.startDate),
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
+        format: input.format ?? undefined,
+        maxPlayers: input.maxPlayers ?? undefined,
+        durationMinutes: input.durationMinutes ?? undefined,
+        chessVariant: input.chessVariant ?? undefined,
+        arenaTimeControl: input.arenaTimeControl ?? undefined,
+        totalRounds: input.totalRounds ?? undefined,
+        tiebreak: input.tiebreak ?? undefined,
+        isRated: input.isRated ?? undefined,
+      });
+    },
+
+    adminAddParticipant: async (
+      _: unknown,
+      { tournamentId, username }: { tournamentId: string; username: string },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return context.services.tournamentService.addParticipantByUsername(tournamentId, username.trim());
+    },
+
+    adminRemoveParticipant: async (
+      _: unknown,
+      { tournamentId, userId }: { tournamentId: string; userId: string },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return context.services.tournamentService.adminRemoveParticipant(tournamentId, userId);
+    },
+
+    adminCancelTournament: async (
+      _: unknown,
+      { tournamentId }: { tournamentId: string },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return context.services.tournamentService.cancelTournament(tournamentId);
     },
   },
 

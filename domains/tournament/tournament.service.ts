@@ -3,6 +3,7 @@ import { TournamentStatus } from "@prisma/client";
 import { TournamentRepository } from "./tournament.repository";
 import type {
   CreateTournamentDTO,
+  AdminCreateTournamentDTO,
   UpdateTournamentDTO,
   JoinTournamentDTO,
   TournamentFilters,
@@ -27,6 +28,44 @@ export class TournamentService {
       throw new ValidationError("End date must be after start date");
 
     return this.tournamentRepository.create(data);
+  }
+
+  /** Admin create with full configuration (no player context required). */
+  async adminCreateTournament(data: AdminCreateTournamentDTO) {
+    const school = await this.prisma.school.findUnique({
+      where: { id: data.schoolId },
+    });
+    if (!school) throw new ValidationError("School not found");
+    if (data.endDate && data.endDate < data.startDate)
+      throw new ValidationError("End date must be after start date");
+    const validFormats = ["ARENA", "SWISS", "ROUND_ROBIN", "KNOCKOUT"];
+    if (data.format && !validFormats.includes(data.format))
+      throw new ValidationError(`Invalid format: ${data.format}`);
+    return this.tournamentRepository.createFull(data);
+  }
+
+  /** Seed a tournament by username (admin convenience). Returns the tournament. */
+  async addParticipantByUsername(tournamentId: string, username: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: "insensitive" } },
+    });
+    if (!user) throw new ValidationError(`No player found with username "${username}"`);
+    return this.addParticipant({ tournamentId, userId: user.id });
+  }
+
+  /** Admin remove a participant; returns the refreshed tournament. */
+  async adminRemoveParticipant(tournamentId: string, userId: string) {
+    await this.removeParticipant(tournamentId, userId);
+    return this.getTournamentById(tournamentId);
+  }
+
+  async cancelTournament(id: string) {
+    const tournament = await this.getTournamentById(id);
+    if (tournament.status === TournamentStatus.COMPLETED)
+      throw new ValidationError("Cannot cancel a completed tournament");
+    return this.tournamentRepository.update(id, {
+      status: TournamentStatus.CANCELLED,
+    });
   }
 
   async getTournamentById(id: string) {

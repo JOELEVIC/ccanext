@@ -313,6 +313,21 @@ export const typeDefs = `#graphql
     endDate: DateTime
   }
 
+  input AdminCreateTournamentInput {
+    name: String!
+    schoolId: ID!
+    startDate: DateTime!
+    endDate: DateTime
+    format: String # ARENA | SWISS | ROUND_ROBIN | KNOCKOUT
+    maxPlayers: Int
+    durationMinutes: Int
+    chessVariant: String
+    arenaTimeControl: String
+    totalRounds: Int
+    tiebreak: String # BUCHHOLZ | SONNEBORN_BERGER | NONE
+    isRated: Boolean
+  }
+
   input CreateSchoolInput {
     name: String!
     region: String!
@@ -416,6 +431,12 @@ export const typeDefs = `#graphql
     joinTournament(tournamentId: ID!): Tournament!
     startTournament(tournamentId: ID!): Tournament!
     completeTournament(tournamentId: ID!): Tournament!
+
+    # Admin tournament management (admin token required)
+    adminCreateTournament(input: AdminCreateTournamentInput!): Tournament!
+    adminAddParticipant(tournamentId: ID!, username: String!): Tournament!
+    adminRemoveParticipant(tournamentId: ID!, userId: ID!): Tournament!
+    adminCancelTournament(tournamentId: ID!): Tournament!
 
     createSchool(input: CreateSchoolInput!): School!
 

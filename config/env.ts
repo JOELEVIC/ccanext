@@ -16,6 +16,12 @@ const envSchema = z.object({
   ADMIN_JWT_EXPIRES_IN: z.string().default("12h"),
   SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL"),
   SUPABASE_ANON_KEY: z.string().min(1, "SUPABASE_ANON_KEY is required"),
+  // Server-only key used to write to Storage (bypasses RLS). Optional so the app
+  // still boots without it; the admin image-upload route returns a clear error
+  // when it's missing. Never expose this to the browser.
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+  // Public Storage bucket that holds activity/event media (images).
+  SUPABASE_MEDIA_BUCKET: z.string().default("activity-media"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
 });
 
@@ -55,6 +61,11 @@ export const config = {
     secret: env.ADMIN_JWT_SECRET ?? `${env.JWT_SECRET}::admin`,
     expiresIn: env.ADMIN_JWT_EXPIRES_IN,
   },
-  supabase: { url: env.SUPABASE_URL, anonKey: env.SUPABASE_ANON_KEY },
+  supabase: {
+    url: env.SUPABASE_URL,
+    anonKey: env.SUPABASE_ANON_KEY,
+    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+    mediaBucket: env.SUPABASE_MEDIA_BUCKET,
+  },
   cors: { origin: env.CORS_ORIGIN },
 } as const;

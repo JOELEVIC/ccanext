@@ -435,6 +435,7 @@ export const typeDefs = `#graphql
     # Admin tournament management (admin token required)
     adminCreateTournament(input: AdminCreateTournamentInput!): Tournament!
     adminAddParticipant(tournamentId: ID!, username: String!): Tournament!
+    adminAddParticipantById(tournamentId: ID!, userId: ID!): Tournament!
     adminRemoveParticipant(tournamentId: ID!, userId: ID!): Tournament!
     adminCancelTournament(tournamentId: ID!): Tournament!
 

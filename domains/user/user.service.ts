@@ -24,19 +24,26 @@ export class UserService {
   }
 
   async createUser(data: CreateUserDTO): Promise<AuthResponse> {
+    // Usernames must be a single handle — no spaces — so they're typeable,
+    // @-mentionable, and safe to match (e.g. when seeding a tournament).
+    const username = (data.username ?? "").trim();
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+      throw new ValidationError(
+        "Username must be 3–20 characters — letters, numbers and underscores only (no spaces).",
+      );
+    }
+
     const existingEmail = await this.userRepository.findByEmail(data.email);
     if (existingEmail) throw new ValidationError("Email already in use");
 
-    const existingUsername = await this.userRepository.findByUsername(
-      data.username
-    );
+    const existingUsername = await this.userRepository.findByUsername(username);
     if (existingUsername) throw new ValidationError("Username already in use");
 
     const passwordHash = bcrypt.hashSync(data.password, SALT_ROUNDS);
 
     const user = await this.userRepository.create({
       email: data.email,
-      username: data.username,
+      username,
       passwordHash,
       role: data.role,
       schoolId: data.schoolId,

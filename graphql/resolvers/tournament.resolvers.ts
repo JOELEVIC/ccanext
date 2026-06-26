@@ -151,6 +151,15 @@ export const tournamentResolvers = {
       return context.services.tournamentService.addParticipantByUsername(tournamentId, username.trim());
     },
 
+    adminAddParticipantById: async (
+      _: unknown,
+      { tournamentId, userId }: { tournamentId: string; userId: string },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return context.services.tournamentService.addParticipant({ tournamentId, userId });
+    },
+
     adminRemoveParticipant: async (
       _: unknown,
       { tournamentId, userId }: { tournamentId: string; userId: string },

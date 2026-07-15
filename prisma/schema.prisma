@@ -542,12 +542,17 @@ model ActivityImage {
   id         String   @id @default(uuid())
   activityId String
   activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  url        String
+  url        String // display rendition (~1800px long edge)
+  thumbUrl   String? // grid/collage rendition (~640px long edge)
+  width      Int? // display-rendition pixel size, for zero-CLS masonry layout
+  height     Int?
+  highlight  Boolean  @default(false) // curated subset shown on landing/feed collages
   caption    String?
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
 
   @@index([activityId])
+  @@index([activityId, highlight])
   @@map("activity_images")
 }
 

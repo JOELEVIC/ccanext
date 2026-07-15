@@ -625,6 +625,10 @@ export const typeDefs = `#graphql
   type ActivityImage {
     id: ID!
     url: String!
+    thumbUrl: String
+    width: Int
+    height: Int
+    highlight: Boolean!
     caption: String
     sortOrder: Int!
   }
@@ -646,6 +650,9 @@ export const typeDefs = `#graphql
     eventDate: DateTime
     publishedAt: DateTime
     images: [ActivityImage!]!
+    "Curated subset for landing/feed collages (highlight-flagged, capped at 12)."
+    highlights: [ActivityImage!]!
+    photoCount: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
   }
@@ -659,6 +666,10 @@ export const typeDefs = `#graphql
 
   input ActivityImageInput {
     url: String!
+    thumbUrl: String
+    width: Int
+    height: Int
+    highlight: Boolean
     caption: String
   }
 

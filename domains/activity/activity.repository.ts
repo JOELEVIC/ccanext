@@ -86,22 +86,49 @@ export class ActivityRepository {
     return this.prisma.activity.delete({ where: { id } });
   }
 
-  /** Replace the whole gallery for an activity. */
+  /**
+   * Replace the whole gallery for an activity (transactionally, so a failed
+   * write can never leave a published post with zero images).
+   *
+   * Clients that only round-trip {url, caption} — the current ccaadmin editor
+   * — must not wipe rendition metadata written by the ingest pipeline, so any
+   * field the caller OMITS (undefined) is coalesced from the existing row
+   * with the same url. Explicit nulls still clear a field on purpose.
+   */
   async replaceImages(
     activityId: string,
-    images: { url: string; caption?: string | null }[]
+    images: {
+      url: string;
+      thumbUrl?: string | null;
+      width?: number | null;
+      height?: number | null;
+      highlight?: boolean | null;
+      caption?: string | null;
+    }[]
   ) {
-    await this.prisma.activityImage.deleteMany({ where: { activityId } });
-    if (images.length) {
-      await this.prisma.activityImage.createMany({
-        data: images.map((img, i) => ({
-          activityId,
-          url: img.url,
-          caption: img.caption ?? null,
-          sortOrder: i,
-        })),
-      });
-    }
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.activityImage.findMany({ where: { activityId } });
+      const byUrl = new Map(existing.map((img) => [img.url, img]));
+
+      await tx.activityImage.deleteMany({ where: { activityId } });
+      if (images.length) {
+        await tx.activityImage.createMany({
+          data: images.map((img, i) => {
+            const prev = byUrl.get(img.url);
+            return {
+              activityId,
+              url: img.url,
+              thumbUrl: img.thumbUrl === undefined ? prev?.thumbUrl ?? null : img.thumbUrl,
+              width: img.width === undefined ? prev?.width ?? null : img.width,
+              height: img.height === undefined ? prev?.height ?? null : img.height,
+              highlight: img.highlight === undefined ? prev?.highlight ?? false : img.highlight ?? false,
+              caption: img.caption === undefined ? prev?.caption ?? null : img.caption,
+              sortOrder: i,
+            };
+          }),
+        });
+      }
+    });
     return this.findById(activityId);
   }
 }

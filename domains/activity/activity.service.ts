@@ -17,7 +17,14 @@ export interface ActivityInput {
   tags?: string[];
   eventDate?: Date | string | null;
   featured?: boolean;
-  images?: { url: string; caption?: string | null }[];
+  images?: {
+    url: string;
+    thumbUrl?: string | null;
+    width?: number | null;
+    height?: number | null;
+    highlight?: boolean | null;
+    caption?: string | null;
+  }[];
 }
 
 function slugify(s: string): string {
@@ -82,6 +89,18 @@ export class ActivityService {
     }
     if (input.type && !VALID_TYPES.includes(input.type)) {
       throw new ValidationError(`Invalid activity type: ${input.type}`);
+    }
+    if (input.images) {
+      if (input.images.length > 300) {
+        throw new ValidationError("A gallery can hold at most 300 photos");
+      }
+      for (const img of input.images) {
+        for (const url of [img.url, img.thumbUrl]) {
+          if (url != null && !/^https?:\/\//i.test(url)) {
+            throw new ValidationError("Image URLs must be http(s)");
+          }
+        }
+      }
     }
   }
 

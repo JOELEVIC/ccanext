@@ -98,5 +98,16 @@ export const activityResolvers = {
     // Stored as JSONB; expose to clients as a JSON string (no JSON scalar in this schema).
     bodyJson: (parent: { bodyJson?: unknown }) =>
       parent.bodyJson == null ? null : JSON.stringify(parent.bodyJson),
+
+    // Every repository read includes `images` ordered by sortOrder, so these
+    // derive from the loaded relation instead of issuing extra queries.
+    highlights: (parent: { images?: { highlight?: boolean }[] }) => {
+      const imgs = parent.images ?? [];
+      const flagged = imgs.filter((img) => img.highlight);
+      // Un-curated galleries still get a collage: fall back to the first images.
+      return (flagged.length ? flagged : imgs).slice(0, 12);
+    },
+
+    photoCount: (parent: { images?: unknown[] }) => parent.images?.length ?? 0,
   },
 };

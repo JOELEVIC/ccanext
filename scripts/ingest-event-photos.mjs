@@ -261,11 +261,25 @@ if (args["dry-run"]) {
   process.exit(0);
 }
 
+// The article page renders rich bodyJson (Tiptap); build a simple doc of
+// paragraphs from --body so the recap actually shows on the event page.
+const bodyText = args.body ?? args.excerpt ?? null;
+const bodyJson = bodyText
+  ? JSON.stringify({
+      type: "doc",
+      content: bodyText
+        .split(/\n+/)
+        .filter((p) => p.trim())
+        .map((p) => ({ type: "paragraph", content: [{ type: "text", text: p.trim() }] })),
+    })
+  : null;
+
 const input = {
   type: TYPE,
   title: TITLE,
   excerpt: args.excerpt ?? null,
-  bodyText: args.body ?? args.excerpt ?? null,
+  bodyText,
+  bodyJson,
   coverImageUrl: cover.url,
   region: args.region ?? null,
   eventDate: args.date ? new Date(args.date).toISOString() : null,

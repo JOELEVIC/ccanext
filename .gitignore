@@ -6,3 +6,6 @@ out
 .env*.local
 .env
 
+
+# TypeScript incremental build cache — machine-local, changes on every build
+tsconfig.tsbuildinfo

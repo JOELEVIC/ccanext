@@ -32,6 +32,19 @@ export const userResolvers = {
     ) => {
       return context.services.userService.getUsers(filters);
     },
+
+    /**
+     * The consent-gated public view of one player (BUILD_PLAN §4.3 / §6).
+     * Routed through toPublicPlayer() in the service — never through the `User`
+     * type, which carries the real name and is for authenticated surfaces.
+     */
+    publicPlayer: async (
+      _: unknown,
+      { id }: { id: string },
+      context: GraphQLContextWithServices
+    ) => {
+      return context.services.userService.getPublicPlayer(id);
+    },
   },
 
   Mutation: {
@@ -54,6 +67,8 @@ export const userResolvers = {
         password: input.password as string,
         role: input.role as UserRole,
         schoolId: input.schoolId as string | undefined,
+        // BUILD_PLAN §6: register "exists; extend with optional joinCode".
+        joinCode: input.joinCode as string | undefined,
         profile: profileData,
       });
     },

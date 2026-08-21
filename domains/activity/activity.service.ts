@@ -2,6 +2,7 @@ import type { PrismaClient, Prisma } from "@prisma/client";
 import { ActivityStatus } from "@prisma/client";
 import { ActivityRepository } from "./activity.repository";
 import { NotFoundError, ValidationError } from "@/utils/types";
+import { normalizeRegion } from "@/domains/region/regions";
 
 const VALID_TYPES = ["ANNOUNCEMENT", "EVENT_RECAP", "ARTICLE", "GALLERY", "RESULT"];
 
@@ -45,12 +46,25 @@ export class ActivityService {
   }
 
   // ── public ────────────────────────────────────────────────────────────────
-  async getFeed(opts: { type?: string; region?: string; limit?: number; offset?: number }) {
+  async getFeed(opts: {
+    type?: string;
+    region?: string;
+    clubId?: string;
+    limit?: number;
+    offset?: number;
+  }) {
     const limit = Math.min(Math.max(opts.limit ?? 12, 1), 50);
     const offset = Math.max(opts.offset ?? 0, 0);
+    // `activities.region` is normalised to canonical keys by section 12 of
+    // prisma/manual_apply_clubs_seasons.sql. Callers still sending the legacy
+    // French free text ("Sud-Ouest") keep working because the ARGUMENT is
+    // canonicalised here too. An unrecognised value is passed through
+    // unchanged, so it filters to nothing rather than silently widening.
+    const region = opts.region ? normalizeRegion(opts.region) ?? opts.region : undefined;
+    const filters = { type: opts.type, region, clubId: opts.clubId };
     const [items, total] = await Promise.all([
-      this.repo.publishedFeed({ type: opts.type, region: opts.region, limit, offset }),
-      this.repo.countPublished({ type: opts.type, region: opts.region }),
+      this.repo.publishedFeed({ ...filters, limit, offset }),
+      this.repo.countPublished(filters),
     ]);
     return { items, total, limit, offset };
   }

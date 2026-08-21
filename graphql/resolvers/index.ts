@@ -11,6 +11,10 @@ import { placementResolvers } from "./placement.resolvers";
 import { adminResolvers } from "./admin.resolvers";
 import { activityResolvers } from "./activity.resolvers";
 import { tournamentRoundResolvers } from "./tournamentRound.resolvers";
+import { clubResolvers } from "./club.resolvers";
+import { seasonResolvers } from "./season.resolvers";
+import { fixtureResolvers } from "./fixture.resolvers";
+import { enquiryResolvers } from "./enquiry.resolvers";
 
 const dateTimeScalar = new GraphQLScalarType({
   name: "DateTime",
@@ -43,6 +47,10 @@ export const resolvers = {
     ...adminResolvers.Query,
     ...activityResolvers.Query,
     ...tournamentRoundResolvers.Query,
+    ...clubResolvers.Query,
+    ...seasonResolvers.Query,
+    ...fixtureResolvers.Query,
+    ...enquiryResolvers.Query,
   },
   Mutation: {
     ...userResolvers.Mutation,
@@ -55,6 +63,7 @@ export const resolvers = {
     ...adminResolvers.Mutation,
     ...activityResolvers.Mutation,
     ...tournamentRoundResolvers.Mutation,
+    ...enquiryResolvers.Mutation,
   },
   Activity: activityResolvers.Activity,
   User: userResolvers.User,
@@ -64,4 +73,10 @@ export const resolvers = {
   Tournament: tournamentResolvers.Tournament,
   TournamentParticipant: tournamentResolvers.TournamentParticipant,
   School: schoolResolvers.School,
+  // Club / season / competition (BUILD_PLAN §6). There is deliberately no
+  // `joinCode` resolver on Club, and every person these types expose is a
+  // `PublicPlayer` produced by toPublicPlayer() (§4.3).
+  Club: clubResolvers.Club,
+  ClubHonour: clubResolvers.ClubHonour,
+  Season: seasonResolvers.Season,
 };

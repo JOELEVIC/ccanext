@@ -44,6 +44,16 @@ model User {
   placementRequired    Boolean   @default(true)
   placementCompletedAt DateTime?
 
+  // Club / competition domain (BUILD_PLAN §3.2). `publicNameMode` may only be
+  // set to FULL when this user's GuardianConsent is GRANTED — see §4.3.
+  publicNameMode  PublicNameMode      @default(INITIAL)
+  memberships     ClubMembership[]
+  guardianConsent GuardianConsent?
+  attendance      SessionAttendance[]
+  boardsAsHome    FixtureBoard[]      @relation("BoardHome")
+  boardsAsAway    FixtureBoard[]      @relation("BoardAway")
+  arbitedFixtures Fixture[]           @relation("FixtureArbiter")
+
   @@index([email])
   @@index([username])
   @@index([schoolId])
@@ -164,6 +174,11 @@ model School {
   id          String       @id @default(uuid())
   name        String
   region      String
+  // Club-domain additions (BUILD_PLAN §3.2). A school may host more than one club.
+  slug        String?      @unique
+  kind        SchoolKind   @default(SECONDARY)
+  town        String?
+  clubs       Club[]
   students    User[]
   tournaments Tournament[]
   createdAt   DateTime     @default(now())
@@ -171,6 +186,13 @@ model School {
 
   @@index([region])
   @@map("schools")
+}
+
+enum SchoolKind {
+  SECONDARY
+  UNIVERSITY
+
+  @@map("school_kind")
 }
 
 // ============================================================================
@@ -195,6 +217,15 @@ model Game {
   tournament     Tournament?   @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
   gameXpAwards   GameXpAward[]
   challenge      Challenge?
+  // Club-domain additions (BUILD_PLAN §3.2). `validationState != NOT_REQUIRED`
+  // is the signal the `cca` game server uses to SKIP its own rating write
+  // (§4.4) — a fixture board is rated once, at arbiter validation.
+  source          GameSource      @default(ONLINE)
+  validationState ValidationState @default(NOT_REQUIRED)
+  clubContextId   String?       // set for club-ladder games
+  // Back-relation only. FixtureBoard.gameId is the canonical side of the link;
+  // there is deliberately no `fixtureBoardId` column on games.
+  fixtureBoard    FixtureBoard?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -269,6 +300,29 @@ enum GameResult {
   STALEMATE
 
   @@map("game_result")
+}
+
+enum GameSource {
+  ONLINE
+  OTB
+
+  @@map("game_source")
+}
+
+enum ValidationState {
+  NOT_REQUIRED
+  PENDING
+  VALIDATED
+  DISPUTED
+
+  @@map("validation_state")
+}
+
+enum PublicNameMode {
+  INITIAL
+  FULL
+
+  @@map("public_name_mode")
 }
 
 // ============================================================================
@@ -528,6 +582,9 @@ model Activity {
   authorAdminId String? // AdminUser.id that wrote it
   eventDate     DateTime? // for event-type posts (the date the event happened/happens)
   publishedAt   DateTime?
+  // Club news feed (BUILD_PLAN §3.2). null = academy-level post.
+  clubId        String?
+  club          Club?           @relation(fields: [clubId], references: [id], onDelete: SetNull)
   images        ActivityImage[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -535,6 +592,7 @@ model Activity {
   @@index([status, publishedAt])
   @@index([type])
   @@index([featured])
+  @@index([clubId])
   @@map("activities")
 }
 
@@ -572,4 +630,470 @@ enum ActivityStatus {
   ARCHIVED
 
   @@map("activity_status")
+}
+// ============================================================================
+// CLUB / SEASON / COMPETITION DOMAIN — BUILD_PLAN §3.1
+// ----------------------------------------------------------------------------
+// School = the institution. Club = the chess club inside it (a school may host
+// more than one). Season = the academic-year container. Division = a league
+// group inside a season, named after its catchment, never a bare region name.
+// Zone = one of four groupings of divisions feeding the zonal finals. Region =
+// one of Cameroon's ten administrative regions, a canonical key like
+// SOUTH_WEST. Fixture = a team match across N boards. Game = one chess game.
+//
+// Additive only. Nothing above this line is renamed or dropped.
+// ============================================================================
+
+// ─── INSTITUTION ────────────────────────────────────────────────────────────
+
+model Club {
+  id        String     @id @default(uuid())
+  slug      String     @unique // "gbhs-limbe"
+  name      String // "GBHS Limbe Chess Club"
+  shortName String // "GL" — 2–3 chars, drives the crest
+  schoolId  String
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  region    String // canonical key, e.g. "SOUTH_WEST"
+  level     ClubLevel  @default(SECONDARY)
+  crestJson Json? // { shield, band, charge } — see BUILD_PLAN §5
+  status    ClubStatus @default(ONBOARDING)
+  joinCode  String     @unique // NEVER exposed on a public GraphQL type
+  foundedOn DateTime?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  memberships   ClubMembership[]
+  sessions      ClubSession[]
+  divisionSpots DivisionEntry[]
+  honours       ClubHonour[]
+  activities    Activity[]
+  homeFixtures  Fixture[]        @relation("HomeClub")
+  awayFixtures  Fixture[]        @relation("AwayClub")
+
+  @@index([region])
+  @@index([status])
+  @@index([schoolId])
+  @@map("clubs")
+}
+
+enum ClubLevel {
+  SECONDARY
+  UNIVERSITY
+
+  @@map("club_level")
+}
+
+enum ClubStatus {
+  ONBOARDING
+  ACTIVE
+  DORMANT
+  ARCHIVED
+
+  @@map("club_status")
+}
+
+// A person's link to one club, with a role and a status. Authorization checks
+// that touch club data read this, never `User.role` alone. Exactly ONE ACTIVE
+// membership per user — enforced by a partial unique index that Prisma cannot
+// express, so it lives in prisma/manual_apply_clubs_seasons.sql (BUILD_PLAN §2).
+model ClubMembership {
+  id         String           @id @default(uuid())
+  clubId     String
+  club       Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       MembershipRole   @default(PLAYER)
+  status     MembershipStatus @default(PENDING)
+  schoolYear String? // "Form 4", "Upper Sixth", "L2"
+  boardOrder Int? // A-team board 1–4, null = not selected
+  joinedAt   DateTime         @default(now())
+  leftAt     DateTime?
+
+  @@unique([clubId, userId])
+  @@index([userId])
+  @@index([clubId, status])
+  @@map("club_memberships")
+}
+
+enum MembershipRole {
+  PLAYER
+  CAPTAIN
+  PATRON
+  ASSISTANT_COACH
+
+  @@map("membership_role")
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  LEFT
+  REMOVED
+
+  @@map("membership_status")
+}
+
+// Club trophies and titles. Player honours reuse the existing `Badge` model.
+model ClubHonour {
+  id        String     @id @default(uuid())
+  clubId    String
+  club      Club       @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  seasonId  String?
+  season    Season?    @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  title     String // "Limbe Inter-Schools Rapid — Champions"
+  kind      HonourKind @default(TROPHY)
+  awardedOn DateTime
+
+  @@index([clubId])
+  @@map("club_honours")
+}
+
+enum HonourKind {
+  TROPHY
+  TITLE
+  PROMOTION
+  MILESTONE
+
+  @@map("honour_kind")
+}
+
+// ─── SEASON & COMPETITION ───────────────────────────────────────────────────
+
+model Season {
+  id        String       @id @default(uuid())
+  slug      String       @unique // "2026-27"
+  name      String // "2026/27"
+  startsOn  DateTime
+  endsOn    DateTime
+  status    SeasonStatus @default(PLANNED)
+  divisions Division[]
+  fixtures  Fixture[]
+  honours   ClubHonour[]
+
+  @@map("seasons")
+}
+
+enum SeasonStatus {
+  PLANNED
+  ACTIVE
+  ARCHIVED
+
+  @@map("season_status")
+}
+
+model Division {
+  id             String    @id @default(uuid())
+  seasonId       String
+  season         Season    @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  name           String // "Fako & Meme" — never a bare region name
+  zone           String // "COASTAL" — one of four
+  regions        String[]  @default([]) // canonical region keys in this division's catchment
+  level          ClubLevel @default(SECONDARY)
+  totalMatchDays Int       @default(14)
+
+  entries  DivisionEntry[]
+  fixtures Fixture[]
+
+  @@unique([seasonId, name, level])
+  @@index([seasonId])
+  @@map("divisions")
+}
+
+// A club's place in a division. Derived from VALIDATED fixtures — never hand-edited.
+// `position` and `previousPosition` are written by the same recompute, so the
+// public table can show movement without a separate history table.
+model DivisionEntry {
+  id               String   @id @default(uuid())
+  divisionId       String
+  division         Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  clubId           String
+  club             Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  played           Int      @default(0)
+  won              Int      @default(0)
+  drawn            Int      @default(0)
+  lost             Int      @default(0)
+  byes             Int      @default(0)
+  matchPoints      Int      @default(0) // 3 / 1 / 0
+  boardPoints      Float    @default(0) // halves are real
+  position         Int?
+  previousPosition Int?
+  formJson         Json? // ["W","W","D","W"] most-recent-last
+
+  @@unique([divisionId, clubId])
+  @@index([divisionId])
+  @@map("division_entries")
+}
+
+// A team match. Both club references are NULLABLE, deliberately:
+//   • a bye             → awayClubId null, boardCount 0, status VALIDATED
+//   • a cup placeholder → both null until the feeding ties resolve; the bracket
+//                         renders `homeSourceLabel` / `awaySourceLabel` instead
+model Fixture {
+  id              String         @id @default(uuid())
+  seasonId        String
+  season          Season         @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  divisionId      String?
+  division        Division?      @relation(fields: [divisionId], references: [id], onDelete: SetNull)
+  competition     Competition    @default(DIVISION)
+  stage           CupStage?
+  matchDay        Int?
+  homeClubId      String?
+  homeClub        Club?          @relation("HomeClub", fields: [homeClubId], references: [id], onDelete: Restrict)
+  awayClubId      String?
+  awayClub        Club?          @relation("AwayClub", fields: [awayClubId], references: [id], onDelete: Restrict)
+  homeSourceLabel String? // "Winner QF1" — bracket placeholder
+  awaySourceLabel String?
+  isBye           Boolean        @default(false)
+  scheduledAt     DateTime
+  venue           String?
+  boardCount      Int            @default(4)
+  status          FixtureStatus  @default(SCHEDULED)
+  homeScore       Float          @default(0) // board points, derived — never entered
+  awayScore       Float          @default(0)
+  arbiterId       String?
+  arbiter         User?          @relation("FixtureArbiter", fields: [arbiterId], references: [id], onDelete: SetNull)
+  validatedById   String?
+  validatedAt     DateTime?
+  boards          FixtureBoard[]
+  events          FixtureEvent[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([seasonId, scheduledAt])
+  @@index([divisionId, matchDay])
+  @@index([homeClubId])
+  @@index([awayClubId])
+  @@index([status])
+  @@map("fixtures")
+}
+
+enum Competition {
+  DIVISION
+  CUP
+  ZONAL_FINAL
+  NATIONAL_FINAL
+  FRIENDLY
+
+  @@map("competition")
+}
+
+enum CupStage {
+  R32
+  R16
+  QUARTER_FINAL
+  SEMI_FINAL
+  FINAL
+
+  @@map("cup_stage")
+}
+
+enum FixtureStatus {
+  SCHEDULED
+  TEAM_SHEETS
+  LIVE
+  AWAITING_VALIDATION
+  VALIDATED
+  CANCELLED
+
+  @@map("fixture_status")
+}
+
+// One board of a fixture. `result` uses the SAME enum as Game — one encoding,
+// no mapping layer. `homeColor` is what lets a display render it White-first.
+// `gameId` is set only when moves exist to store: always for ONLINE boards,
+// for OTB boards only if someone digitises the scoresheet. Ratings and career
+// ledgers read FixtureBoard, never Game, so a moveless OTB board still counts.
+model FixtureBoard {
+  id            String      @id @default(uuid())
+  fixtureId     String
+  fixture       Fixture     @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+  boardNumber   Int
+  homeUserId    String?
+  homeUser      User?       @relation("BoardHome", fields: [homeUserId], references: [id], onDelete: SetNull)
+  awayUserId    String?
+  awayUser      User?       @relation("BoardAway", fields: [awayUserId], references: [id], onDelete: SetNull)
+  homeColor     PieceColor  @default(WHITE)
+  source        GameSource  @default(OTB)
+  gameId        String?     @unique
+  game          Game?       @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  result        GameResult?
+  scoresheetUrl String?
+  moveCount     Int?
+  recordedById  String?
+  recordedAt    DateTime?
+  ratedAt       DateTime? // set once, at validation — guards double-rating
+
+  @@unique([fixtureId, boardNumber])
+  @@index([fixtureId])
+  @@map("fixture_boards")
+}
+
+enum PieceColor {
+  WHITE
+  BLACK
+
+  @@map("piece_color")
+}
+
+// The live-coverage timeline on a fixture page. Written by result entry and
+// validation; readable publicly.
+model FixtureEvent {
+  id         String    @id @default(uuid())
+  fixtureId  String
+  fixture    Fixture   @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+  kind       EventKind
+  board      Int?
+  message    String
+  occurredAt DateTime  @default(now())
+
+  @@index([fixtureId, occurredAt])
+  @@map("fixture_events")
+}
+
+enum EventKind {
+  MATCH_START
+  BOARD_RESULT
+  VALIDATED
+  NOTE
+
+  @@map("event_kind")
+}
+
+// ─── CLUB LIFE ──────────────────────────────────────────────────────────────
+
+model ClubSession {
+  id       String        @id @default(uuid())
+  clubId   String
+  club     Club          @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  title    String
+  startsAt DateTime
+  location String?
+  planJson Json?
+  status   SessionStatus @default(SCHEDULED)
+
+  attendance SessionAttendance[]
+
+  @@index([clubId, startsAt])
+  @@map("club_sessions")
+}
+
+enum SessionStatus {
+  SCHEDULED
+  HELD
+  CANCELLED
+
+  @@map("session_status")
+}
+
+model SessionAttendance {
+  id        String          @id @default(uuid())
+  sessionId String
+  session   ClubSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  state     AttendanceState @default(ABSENT)
+  markedAt  DateTime        @default(now())
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+  @@map("session_attendance")
+}
+
+enum AttendanceState {
+  PRESENT
+  EXCUSED
+  ABSENT
+
+  @@map("attendance_state")
+}
+
+// ─── SAFEGUARDING ───────────────────────────────────────────────────────────
+
+// Consent gates DISPLAY, not participation (BUILD_PLAN §3.3 #5 / §4.3). A player
+// with pending consent still plays, still rates and still appears in standings —
+// as "Brenda A.". Unknown age, or no Profile at all, is treated as a minor.
+model GuardianConsent {
+  id              String         @id @default(uuid())
+  userId          String         @unique
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status          ConsentStatus  @default(PENDING)
+  method          ConsentMethod?
+  guardianName    String?
+  guardianContact String?
+  countersignedBy String?
+  requestedAt     DateTime       @default(now())
+  decidedAt       DateTime?
+
+  @@index([status])
+  @@map("guardian_consents")
+}
+
+enum ConsentStatus {
+  PENDING
+  GRANTED
+  DECLINED
+  WITHDRAWN
+
+  @@map("consent_status")
+}
+
+enum ConsentMethod {
+  SMS
+  WHATSAPP
+  PAPER
+  EMAIL
+
+  @@map("consent_method")
+}
+
+// ─── INTAKE ─────────────────────────────────────────────────────────────────
+
+model SchoolEnquiry {
+  id           String        @id @default(uuid())
+  schoolName   String
+  town         String?
+  region       String
+  level        ClubLevel     @default(SECONDARY)
+  sizeBand     String?
+  contactName  String
+  contactRole  String?
+  contactPhone String
+  contactEmail String?
+  note         String?
+  wantsFrench  Boolean       @default(false)
+  status       EnquiryStatus @default(NEW)
+  createdAt    DateTime      @default(now())
+
+  @@index([status, createdAt])
+  @@map("school_enquiries")
+}
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  MEETING_BOOKED
+  SIGNED
+  DECLINED
+
+  @@map("enquiry_status")
+}
+
+// Rate-limit ledger for the PUBLIC `submitSchoolEnquiry` mutation (BUILD_PLAN §6).
+// Vercel serverless has no shared memory, so an in-process counter is useless —
+// every invocation may be a cold container. The throttle therefore lives in the
+// database: one row per (scope, key) with a rolling window.
+//
+// `key` is a SHA-256 of the IP or of the normalised phone number, never the raw
+// value: this table exists to say "too many", not to build a log of who tried.
+model EnquiryThrottle {
+  id              String   @id @default(uuid())
+  scope           String // "IP" | "PHONE"
+  key             String // sha256(value) — never the raw IP or phone
+  count           Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+
+  @@unique([scope, key])
+  @@index([windowStartedAt])
+  @@map("enquiry_throttle")
 }

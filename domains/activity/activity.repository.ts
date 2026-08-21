@@ -5,11 +5,19 @@ export class ActivityRepository {
   constructor(private prisma: PrismaClient) {}
 
   /** Public feed: published only, featured first, newest first. */
-  publishedFeed(opts: { type?: string; region?: string; limit: number; offset: number }) {
+  publishedFeed(opts: {
+    type?: string;
+    region?: string;
+    clubId?: string;
+    limit: number;
+    offset: number;
+  }) {
     const where: Prisma.ActivityWhereInput = {
       status: ActivityStatus.PUBLISHED,
       ...(opts.type ? { type: opts.type as Prisma.ActivityWhereInput["type"] } : {}),
       ...(opts.region ? { region: opts.region } : {}),
+      // Club news is the same feed, filtered (BUILD_PLAN §3.2 / §6).
+      ...(opts.clubId ? { clubId: opts.clubId } : {}),
     };
     return this.prisma.activity.findMany({
       where,
@@ -20,12 +28,13 @@ export class ActivityRepository {
     });
   }
 
-  countPublished(opts: { type?: string; region?: string }) {
+  countPublished(opts: { type?: string; region?: string; clubId?: string }) {
     return this.prisma.activity.count({
       where: {
         status: ActivityStatus.PUBLISHED,
         ...(opts.type ? { type: opts.type as Prisma.ActivityWhereInput["type"] } : {}),
         ...(opts.region ? { region: opts.region } : {}),
+        ...(opts.clubId ? { clubId: opts.clubId } : {}),
       },
     });
   }

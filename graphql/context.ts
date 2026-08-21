@@ -8,6 +8,10 @@ import type { PlacementService } from "@/domains/placement/placement.service";
 import type { AdminService } from "@/domains/admin/admin.service";
 import type { ActivityService } from "@/domains/activity/activity.service";
 import type { TournamentRoundService } from "@/domains/tournament/round.service";
+import type { ClubService } from "@/domains/club/club.service";
+import type { SeasonService } from "@/domains/season/season.service";
+import type { FixtureService } from "@/domains/fixture/fixture.service";
+import type { EnquiryService } from "@/domains/enquiry/enquiry.service";
 import { prisma } from "@/lib/prisma";
 import { optionalAuthenticate, optionalAdminAuthenticate } from "@/lib/auth";
 import type { AdminAuthContext } from "@/lib/auth";
@@ -21,11 +25,21 @@ import { PlacementService as PlacementServiceClass } from "@/domains/placement/p
 import { AdminService as AdminServiceClass } from "@/domains/admin/admin.service";
 import { ActivityService as ActivityServiceClass } from "@/domains/activity/activity.service";
 import { TournamentRoundService as TournamentRoundServiceClass } from "@/domains/tournament/round.service";
+import { ClubService as ClubServiceClass } from "@/domains/club/club.service";
+import { SeasonService as SeasonServiceClass } from "@/domains/season/season.service";
+import { FixtureService as FixtureServiceClass } from "@/domains/fixture/fixture.service";
+import { EnquiryService as EnquiryServiceClass } from "@/domains/enquiry/enquiry.service";
 import type { AuthContext } from "@/utils/types";
 
 export interface GraphQLContextWithServices {
   user?: AuthContext;
   admin?: AdminAuthContext;
+  /**
+   * The caller's IP, for the `submitSchoolEnquiry` throttle only (BUILD_PLAN
+   * §6). It is hashed the moment it reaches EnquiryService and is never stored,
+   * logged or put in a URL. Undefined when no proxy header is present.
+   */
+  clientIp?: string;
   prisma: typeof prisma;
   services: {
     userService: UserService;
@@ -38,7 +52,25 @@ export interface GraphQLContextWithServices {
     adminService: AdminService;
     activityService: ActivityService;
     tournamentRoundService: TournamentRoundService;
+    clubService: ClubService;
+    seasonService: SeasonService;
+    fixtureService: FixtureService;
+    enquiryService: EnquiryService;
   };
+}
+
+/**
+ * The client IP as the platform reports it. Vercel sets `x-forwarded-for`
+ * (client first, then each proxy) and `x-real-ip`. Only the FIRST hop is used,
+ * and only as throttle input — see the note on `clientIp` above.
+ */
+function clientIpFrom(request: Request): string | undefined {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return request.headers.get("x-real-ip")?.trim() || undefined;
 }
 
 export async function buildContext(request: Request): Promise<GraphQLContextWithServices> {
@@ -50,6 +82,7 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
   return {
     user,
     admin,
+    clientIp: clientIpFrom(request),
     prisma,
     services: {
       userService: new UserServiceClass(prisma),
@@ -62,6 +95,10 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       adminService: new AdminServiceClass(prisma),
       activityService: new ActivityServiceClass(prisma),
       tournamentRoundService: new TournamentRoundServiceClass(prisma),
+      clubService: new ClubServiceClass(prisma),
+      seasonService: new SeasonServiceClass(prisma),
+      fixtureService: new FixtureServiceClass(prisma),
+      enquiryService: new EnquiryServiceClass(prisma),
     },
   };
 }

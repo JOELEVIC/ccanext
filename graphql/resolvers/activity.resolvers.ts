@@ -1,6 +1,7 @@
 import { GraphQLError } from "graphql";
 import type { GraphQLContextWithServices } from "@/graphql/context";
 import type { ActivityInput } from "@/domains/activity/activity.service";
+import { normalizeRegion } from "@/domains/region/regions";
 
 function requireAdmin(ctx: GraphQLContextWithServices) {
   if (!ctx.admin) {
@@ -25,14 +26,18 @@ function normalize(input: GqlActivityInput): ActivityInput {
       throw new GraphQLError("bodyJson must be valid JSON");
     }
   }
-  return { ...input, bodyJson };
+  // New posts are written with a canonical region key, so the one-off
+  // normalisation in prisma/manual_apply_clubs_seasons.sql section 12 stays a
+  // one-off rather than something that has to be re-run after every article.
+  const region = input.region ? normalizeRegion(input.region) ?? input.region : input.region;
+  return { ...input, bodyJson, region };
 }
 
 export const activityResolvers = {
   Query: {
     activities: (
       _: unknown,
-      args: { type?: string; region?: string; limit?: number; offset?: number },
+      args: { clubId?: string; type?: string; region?: string; limit?: number; offset?: number },
       ctx: GraphQLContextWithServices
     ) => ctx.services.activityService.getFeed(args),
 

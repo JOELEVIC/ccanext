@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import type { PrismaClient } from "@prisma/client";
-import { UserRole } from "@prisma/client";
+import { UserRole, ClubStatus, MembershipRole, MembershipStatus } from "@prisma/client";
 import { UserRepository } from "./user.repository";
 import { verifyGoogleIdToken } from "@/domains/auth/googleVerify";
 import type {
@@ -12,6 +12,8 @@ import type {
   UserFilters,
 } from "./user.types";
 import { generateToken } from "@/utils/jwt";
+import { toPublicPlayer, type PublicPlayer } from "./publicPlayer";
+import { publicPlayerSelect } from "./publicPlayer.select";
 import { AuthenticationError, ValidationError, NotFoundError } from "@/utils/types";
 
 const SALT_ROUNDS = 12;
@@ -19,7 +21,7 @@ const SALT_ROUNDS = 12;
 export class UserService {
   private userRepository: UserRepository;
 
-  constructor(prisma: PrismaClient) {
+  constructor(private prisma: PrismaClient) {
     this.userRepository = new UserRepository(prisma);
   }
 
@@ -39,6 +41,19 @@ export class UserService {
     const existingUsername = await this.userRepository.findByUsername(username);
     if (existingUsername) throw new ValidationError("Username already in use");
 
+    // A join code is resolved BEFORE the account exists: a typo must fail the
+    // registration outright rather than leave someone signed up but attached to
+    // nothing, believing they joined their school's club (BUILD_PLAN §6).
+    const joinCode = data.joinCode?.trim();
+    let club: { id: string; schoolId: string } | null = null;
+    if (joinCode) {
+      club = await this.prisma.club.findFirst({
+        where: { joinCode, status: { not: ClubStatus.ARCHIVED } },
+        select: { id: true, schoolId: true },
+      });
+      if (!club) throw new ValidationError("That club code is not recognised.");
+    }
+
     const passwordHash = bcrypt.hashSync(data.password, SALT_ROUNDS);
 
     const user = await this.userRepository.create({
@@ -46,13 +61,29 @@ export class UserService {
       username,
       passwordHash,
       role: data.role,
-      schoolId: data.schoolId,
+      // `User.schoolId` is legacy but must stay in sync with club affiliation
+      // (BUILD_PLAN §2); club membership itself is read from ClubMembership.
+      schoolId: data.schoolId ?? club?.schoolId,
       profile: data.profile,
       // New accounts seed at an artificial rating of 100 and must complete placement;
       // the placement run then overwrites this with the estimated Elo.
       rating: 100,
       placementRequired: true,
     });
+
+    // PENDING, not ACTIVE: holding the code proves which club, not that the
+    // patron has admitted this person. The partial unique index on one ACTIVE
+    // membership per user (BUILD_PLAN §2) is therefore never at risk here.
+    if (club) {
+      await this.prisma.clubMembership.create({
+        data: {
+          clubId: club.id,
+          userId: user.id,
+          role: MembershipRole.PLAYER,
+          status: MembershipStatus.PENDING,
+        },
+      });
+    }
 
     const token = generateToken(user.id, user.role);
 
@@ -68,6 +99,20 @@ export class UserService {
         updatedAt: user.updatedAt,
       },
     };
+  }
+
+  /**
+   * The `publicPlayer(id)` query — BUILD_PLAN §6 and §4.3.
+   *
+   * Deliberately NOT `getUserById`: this returns the consent-reduced shape and
+   * nothing else. `/players/[id]` renders strictly this (T1.13).
+   */
+  async getPublicPlayer(id: string): Promise<PublicPlayer | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: publicPlayerSelect,
+    });
+    return user ? toPublicPlayer(user) : null;
   }
 
   async authenticateUser(data: LoginDTO): Promise<AuthResponse> {

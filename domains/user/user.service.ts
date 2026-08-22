@@ -13,6 +13,7 @@ import type {
 } from "./user.types";
 import { generateToken } from "@/utils/jwt";
 import { toPublicPlayer, type PublicPlayer } from "./publicPlayer";
+import type { Viewer } from "./identityVisibility";
 import { publicPlayerSelect } from "./publicPlayer.select";
 import { AuthenticationError, ValidationError, NotFoundError } from "@/utils/types";
 
@@ -220,8 +221,17 @@ export class UserService {
     return user;
   }
 
-  async getUsers(filters?: UserFilters) {
-    return this.userRepository.findMany(filters);
+  /**
+   * `Query.users`. The viewer is passed straight through: `search` may only
+   * match `email` for a caller entitled to read it, and an unprivileged list is
+   * capped. See `UserRepository.findMany`.
+   *
+   * `viewer` is optional so every existing caller keeps compiling — and omitting
+   * it yields the ANONYMOUS (most restrictive) treatment, which is the safe way
+   * round for a default.
+   */
+  async getUsers(filters?: UserFilters, viewer?: Viewer | null) {
+    return this.userRepository.findMany(filters, viewer);
   }
 
   async updateUser(id: string, data: UpdateUserDTO) {

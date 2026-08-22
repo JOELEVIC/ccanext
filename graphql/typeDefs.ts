@@ -49,7 +49,13 @@ export const typeDefs = `#graphql
 
   type User {
     id: ID!
-    email: String!
+    """
+    Null for everyone but the account owner and academy staff (BUILD_PLAN §4.3).
+    Nullable rather than removed on purpose: deleting the field would fail
+    validation for every client query that already selects it, whereas a null
+    simply redacts. The me query and the admin console are unaffected.
+    """
+    email: String
     username: String!
     role: UserRole!
     rating: Int!
@@ -61,14 +67,23 @@ export const typeDefs = `#graphql
     updatedAt: DateTime!
   }
 
+  """
+  A person's own profile. Reachable from User, which every public query returns,
+  so the PII on it is guarded field by field in domains/user/identityGate.ts:
+  lastName reduces to the §4.3 initial, dateOfBirth and avatarUrl go null, and
+  firstName stays whole so the pair renders "Brenda A.".
+  """
   type Profile {
     id: ID!
     userId: ID!
     firstName: String!
+    "Reduced to the initial form — Ateba becomes A. — for a non-consented minor. BUILD_PLAN §4.3."
     lastName: String!
+    "Null for everyone but the account owner and academy staff. Consent INPUT, never an output."
     dateOfBirth: DateTime
     country: String!
     chessTitle: String
+    "Null when the name is reduced: the photograph travels with the name (§4.3)."
     avatarUrl: String
     followerCount: Int!
     friendCount: Int!

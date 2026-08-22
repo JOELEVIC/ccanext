@@ -1,6 +1,7 @@
 import { GraphQLError } from "graphql";
 import type { GraphQLContextWithServices } from "@/graphql/context";
 import type { UserRole } from "@prisma/client";
+import { markSelfDisclosed } from "@/domains/user/identityVisibility";
 
 export const userResolvers = {
   Query: {
@@ -25,12 +26,21 @@ export const userResolvers = {
       return context.services.userService.getUserById(id);
     },
 
+    /**
+     * Unauthenticated. The viewer is handed to the service because `filters.search`
+     * is itself a read of `User.email` unless it is scoped — see
+     * `UserRepository.findMany` — and because an uncapped public list is a
+     * one-request scrape of the whole roster.
+     *
+     * `context.viewer.isStaff` comes from the admin token alone; a player token
+     * claiming `role: "NATIONAL_ADMIN"` widens nothing here.
+     */
     users: async (
       _: unknown,
       { filters }: { filters?: { role?: UserRole; schoolId?: string; search?: string } },
       context: GraphQLContextWithServices
     ) => {
-      return context.services.userService.getUsers(filters);
+      return context.services.userService.getUsers(filters, context.viewer);
     },
 
     /**
@@ -61,7 +71,7 @@ export const userResolvers = {
             }
           : undefined;
 
-      return context.services.userService.createUser({
+      const registered = await context.services.userService.createUser({
         email: input.email as string,
         username: input.username as string,
         password: input.password as string,
@@ -71,6 +81,10 @@ export const userResolvers = {
         joinCode: input.joinCode as string | undefined,
         profile: profileData,
       });
+      // The caller just proved they own this account, but the request carried
+      // no token, so `context.user` is empty. Mark it self so `User.email`
+      // still answers — see `markSelfDisclosed`.
+      return { ...registered, user: markSelfDisclosed(registered.user) };
     },
 
     login: async (
@@ -78,7 +92,8 @@ export const userResolvers = {
       { input }: { input: { email: string; password: string } },
       context: GraphQLContextWithServices
     ) => {
-      return context.services.userService.authenticateUser(input);
+      const authed = await context.services.userService.authenticateUser(input);
+      return { ...authed, user: markSelfDisclosed(authed.user) };
     },
 
     loginWithGoogle: async (
@@ -86,7 +101,8 @@ export const userResolvers = {
       { idToken }: { idToken: string },
       context: GraphQLContextWithServices
     ) => {
-      return context.services.userService.loginWithGoogle(idToken);
+      const authed = await context.services.userService.loginWithGoogle(idToken);
+      return { ...authed, user: markSelfDisclosed(authed.user) };
     },
 
     updateProfile: async (
@@ -107,6 +123,19 @@ export const userResolvers = {
   },
 
   User: {
+    /**
+     * BUILD_PLAN §4.3 / the acceptance line "no full name of a non-consented
+     * minor appears in any public response".
+     *
+     * An email is not a display field — no public surface renders one — so it
+     * has no consent branch at all: the account owner and academy staff, and
+     * nobody else. The guard sits on the TYPE, so every query that returns a
+     * `User` inherits it: `user`, `users`, `school.students`, `schoolLeaderboard`,
+     * `playersLeaderboard`, `liveGames`, tournament participants, and whatever
+     * public resolver is added next.
+     */
+    email: (parent: { id: string; email?: string | null }, _: unknown, context: GraphQLContextWithServices) =>
+      context.identity.email(parent),
     profile: (parent: { profile?: unknown }) => parent.profile,
     school: (parent: { school?: unknown }) => parent.school,
     variantRatings: async (
@@ -134,6 +163,21 @@ export const userResolvers = {
   },
 
   Profile: {
+    /**
+     * The §4.3 truth table, applied to the fields `Profile` carries. The
+     * decision itself is `canShowFullIdentity()` in `publicPlayer.ts` — the same
+     * function `toPublicPlayer()` uses — reached through `context.identity`.
+     *
+     * `firstName` is NOT guarded, deliberately: §4.3's reduced identity is
+     * "Brenda A.", so the given name survives in full and only the surname
+     * collapses to an initial. See the header of `identityVisibility.ts`.
+     */
+    lastName: (parent: { userId: string; lastName?: string | null }, _: unknown, context: GraphQLContextWithServices) =>
+      context.identity.lastName(parent),
+    dateOfBirth: (parent: { userId: string; dateOfBirth?: Date | null }, _: unknown, context: GraphQLContextWithServices) =>
+      context.identity.dateOfBirth(parent),
+    avatarUrl: (parent: { userId: string; avatarUrl?: string | null }, _: unknown, context: GraphQLContextWithServices) =>
+      context.identity.avatarUrl(parent),
     level: (parent: { xp: number }) => {
       return 1 + Math.floor((parent.xp ?? 0) / 100);
     },

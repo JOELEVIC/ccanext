@@ -192,6 +192,20 @@ function firstGrapheme(value: string): string {
   return Array.from(value)[0] ?? "";
 }
 
+/**
+ * The surname as §4.3 reduces it: "Ateba" -> "A.", nothing -> "".
+ *
+ * Exported because the GraphQL field guard on `Profile.lastName` returns
+ * exactly this, so that a client rendering `firstName + " " + lastName`
+ * naturally produces the same "Brenda A." that `reducedName()` produces here.
+ * One implementation, two call sites — not two implementations.
+ */
+export function lastNameInitial(lastName: string | null | undefined): string {
+  const last = (lastName ?? "").trim();
+  if (!last) return "";
+  return `${firstGrapheme(last).toUpperCase()}.`;
+}
+
 /** "Brenda Ateba" -> "Brenda A." · "Brenda" -> "Brenda" · nothing -> the username. */
 export function reducedName(
   profile: PublicPlayerProfileSource | null | undefined,
@@ -199,7 +213,7 @@ export function reducedName(
 ): string {
   const first = profile?.firstName?.trim() ?? "";
   const last = profile?.lastName?.trim() ?? "";
-  if (first && last) return `${first} ${firstGrapheme(last).toUpperCase()}.`;
+  if (first && last) return `${first} ${lastNameInitial(last)}`;
   if (first) return first;
   // No name on file. The username is the account's already-public handle
   // (it is on every leaderboard and game record today), so it is the least
@@ -239,6 +253,35 @@ export function parseCrest(crestJson: unknown): Crest | null {
   return { shield, band, charge };
 }
 
+// ── The one decision ──────────────────────────────────────────────────────────
+
+/**
+ * THE §4.3 DECISION, in one expression: may this person's real identity — full
+ * surname and photograph — be shown to the PUBLIC?
+ *
+ * `toPublicPlayer()` calls it, and so does every GraphQL field guard in
+ * `identityVisibility.ts`. That is the point: there is one place where "is this
+ * a non-consented minor?" is answered, so the two surfaces cannot drift.
+ *
+ * Everything optional, and every missing piece reads as a minor:
+ *   • no `profile`, or no `dateOfBirth`  -> minor (unknown age is protective)
+ *   • no `guardianConsent` row           -> not GRANTED -> mode forced to INITIAL
+ * so a caller who forgets an include gets REDACTION, never a leak.
+ *
+ * NOTE this answers "may the public see it", nothing more. Whether the *caller*
+ * is the person themselves or a member of staff is a separate question, asked
+ * by `isPrivilegedViewer()` in `identityVisibility.ts`.
+ */
+export function canShowFullIdentity(
+  source: Pick<PublicPlayerSource, "publicNameMode" | "profile" | "guardianConsent">,
+  opts: { now?: Date } = {}
+): boolean {
+  const now = opts.now ?? new Date();
+  const adult = !isMinor(source.profile ?? null, now);
+  const mode = effectivePublicNameMode(source.publicNameMode, source.guardianConsent);
+  return adult || mode === "FULL";
+}
+
 // ── The one function ──────────────────────────────────────────────────────────
 
 /**
@@ -257,9 +300,7 @@ export function toPublicPlayer(
   const membership = source.membership ?? source.memberships?.[0] ?? null;
   const club = membership?.club ?? null;
 
-  const adult = !isMinor(profile, now);
-  const mode = effectivePublicNameMode(source.publicNameMode, source.guardianConsent);
-  const showFull = adult || mode === "FULL";
+  const showFull = canShowFullIdentity(source, { now });
 
   return {
     id: source.id,

@@ -30,6 +30,8 @@ import { SeasonService as SeasonServiceClass } from "@/domains/season/season.ser
 import { FixtureService as FixtureServiceClass } from "@/domains/fixture/fixture.service";
 import { EnquiryService as EnquiryServiceClass } from "@/domains/enquiry/enquiry.service";
 import type { AuthContext } from "@/utils/types";
+import { IdentityGate, prismaConsentReader } from "@/domains/user/identityGate";
+import type { Viewer } from "@/domains/user/identityVisibility";
 
 export interface GraphQLContextWithServices {
   user?: AuthContext;
@@ -40,6 +42,30 @@ export interface GraphQLContextWithServices {
    * logged or put in a URL. Undefined when no proxy header is present.
    */
   clientIp?: string;
+  /**
+   * BUILD_PLAN §4.3, enforced at the FIELD level on `User` and `Profile`.
+   *
+   * `User` and `Profile` are reachable from `user`, `users`, `school.students`,
+   * `schoolLeaderboard`, `playersLeaderboard`, `liveGames`, tournament
+   * participants and more — all unauthenticated. Gating those queries one by one
+   * means the next public resolver that returns a `User` leaks by default. The
+   * gate hangs off the two TYPES instead, so a new query inherits the rule for
+   * free, and the SDL shape every existing client validates against is unchanged.
+   *
+   * Built from `user` (self) and `admin` (staff) above — see `identityVisibility.ts`
+   * for why `user.role` is deliberately NOT consulted.
+   */
+  identity: IdentityGate;
+  /**
+   * The same two facts the `identity` gate is built from — "who is asking, and
+   * are they staff?" — exposed for resolvers that must make the decision at the
+   * QUERY level rather than the field level (`Query.users`, whose `search`
+   * argument must not be allowed to match `email` for an unprivileged caller).
+   *
+   * Assembled once, here, so `isStaff` has exactly one definition: `admin`, the
+   * separately-signed console token. Never `user.role`.
+   */
+  viewer: Viewer;
   prisma: typeof prisma;
   services: {
     userService: UserService;
@@ -79,10 +105,14 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
     optionalAdminAuthenticate(request),
   ]);
 
+  const viewer: Viewer = { userId: user?.userId ?? null, isStaff: Boolean(admin) };
+
   return {
     user,
     admin,
     clientIp: clientIpFrom(request),
+    identity: new IdentityGate(viewer, prismaConsentReader(prisma)),
+    viewer,
     prisma,
     services: {
       userService: new UserServiceClass(prisma),

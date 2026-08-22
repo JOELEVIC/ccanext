@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { GameStatus, GameResult } from "@prisma/client";
+import { GameStatus, GameResult, ValidationState } from "@prisma/client";
 import { GameRepository } from "./game.repository";
 import type { CreateGameDTO, MakeMoveDTO, GameFilters } from "./game.types";
 import {
@@ -17,6 +17,24 @@ const XP_LOSS = 5;
 /** Glicko float rating → the clamped integer mirrored on users.rating for display. */
 function toDisplayRating(rating: number): number {
   return Math.max(0, Math.min(3000, Math.round(rating)));
+}
+
+/**
+ * True when this game's rating is DEFERRED to arbiter validation
+ * (BUILD_PLAN §4.4). A fixture board's game carries a `validationState` other
+ * than NOT_REQUIRED; it is rated exactly once, later, when the arbiter
+ * validates the fixture (§3.3 invariant 3) — never at completion.
+ *
+ * A null, absent or unrecognised value means NOT_REQUIRED. That is the
+ * protective default: legacy rows written before the column existed, and every
+ * ordinary online game, rate exactly as they always have.
+ */
+function ratingDeferredToValidation(value?: string | null): boolean {
+  return (
+    value != null &&
+    value !== ValidationState.NOT_REQUIRED &&
+    Object.prototype.hasOwnProperty.call(ValidationState, value)
+  );
 }
 
 export class GameService {
@@ -241,6 +259,10 @@ export class GameService {
    * persist status/result/moves and apply Glicko-2 rating changes. Idempotent —
    * an already-finished game is returned unchanged (no double rating). A null
    * `result` means the game was aborted (voided): marked ABANDONED, no rating.
+   *
+   * The outcome is ALWAYS persisted, including for a fixture board's game — one
+   * ledger holds over-the-board and online play alike. Only the *rating* step is
+   * conditional; see `applyGlickoRatings` (BUILD_PLAN §4.4).
    */
   async recordGameResult(params: {
     gameId: string;
@@ -287,6 +309,7 @@ export class GameService {
   private async applyGlickoRatings(game: {
     result: GameResult | null;
     rated?: boolean;
+    validationState?: string | null;
     whiteId: string;
     blackId: string;
     white: { rating: number };
@@ -294,6 +317,10 @@ export class GameService {
   }) {
     if (!game.result) return;
     if (game.rated === false) return; // casual game — outcome recorded, ratings untouched
+    // BUILD_PLAN §4.4 — the double-rating guard, applied at the rating write
+    // itself so the outcome (status/result/moves) still persists. A fixture
+    // board's game is rated once, later, at arbiter validation.
+    if (ratingDeferredToValidation(game.validationState)) return;
 
     const whiteState = await this.getOrInitRating(game.whiteId, game.white.rating);
     const blackState = await this.getOrInitRating(game.blackId, game.black.rating);

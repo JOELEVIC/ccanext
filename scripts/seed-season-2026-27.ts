@@ -159,6 +159,7 @@ const CLUBS: ClubSpec[] = [
   { key: "bamenda-a", club: "Bamenda Secondary A", shortName: "BM", town: "Bamenda", region: "NORTH_WEST", division: "mezam", schoolKey: "bamenda-secondary", school: "Bamenda Secondary School" },
   { key: "bamenda-b", club: "Bamenda Secondary B", shortName: "BN", town: "Bamenda", region: "NORTH_WEST", division: "mezam", schoolKey: "bamenda-college", school: "Bamenda College" },
   { key: "bamenda-c", club: "Bamenda Nkwen A", shortName: "BO", town: "Bamenda", region: "NORTH_WEST", division: "mezam", schoolKey: "bamenda-nkwen", school: "Bamenda Nkwen School" },
+  { key: "bamenda-d", club: "Bamenda Nkwen B", shortName: "BP", town: "Bamenda", region: "NORTH_WEST", division: "mezam", schoolKey: "bamenda-nkwen", school: "Bamenda Nkwen School" },
 
   // Mfoundi — Yaounde.
   { key: "yaounde-a", club: "Yaounde Secondary A", shortName: "YA", town: "Yaounde", region: "CENTRE", division: "mfoundi", schoolKey: "yaounde-secondary", school: "Yaounde Secondary School" },
@@ -266,14 +267,27 @@ function fixturePlan(clubs: ClubSpec[]): FixturePlan[] {
   const town = clubs[0].town;
   const plans: FixturePlan[] = [];
 
-  const pair = (md: number, a: number, b: number, status: FixtureStatus, boards: Outcome[]) =>
+  // The plan below is written against a division of four or five clubs and
+  // indexes up to `clubs[4]`. Mezam shipped with three and this threw
+  // `Cannot read properties of undefined (reading 'town')` partway through the
+  // seed — after the season, divisions, clubs and players had already been
+  // written, so the database was left half-seeded and the failure looked like
+  // a database problem rather than an off-by-one in a fixture list.
+  //
+  // A division too small for a given pairing now skips that pairing instead of
+  // crashing. Skipping is the right answer rather than inventing an opponent:
+  // fixtures are sample data, and a division with fewer clubs simply has fewer
+  // of them.
+  const pair = (md: number, a: number, b: number, status: FixtureStatus, boards: Outcome[]) => {
+    if (!clubs[a] || !clubs[b]) return;
     plans.push({ matchDay: md, home: keys[a], away: keys[b], status, boards, venueTown: clubs[a].town });
+  };
 
   // Match day 1 — validated.
   pair(1, 0, 1, FixtureStatus.VALIDATED, ["H", "H", "D", "A"]); // 2.5 - 1.5
   pair(1, 2, 3, FixtureStatus.VALIDATED, ["D", "D", "D", "D"]); // 2 - 2
   if (keys.length === 5) {
-    plans.push({ matchDay: 1, home: keys[4], away: null, status: FixtureStatus.VALIDATED, boards: [], venueTown: clubs[4].town });
+    plans.push({ matchDay: 1, home: keys[4], away: null, status: FixtureStatus.VALIDATED, boards: [], venueTown: clubs[4]!.town });
   }
 
   // Match day 2 — validated.

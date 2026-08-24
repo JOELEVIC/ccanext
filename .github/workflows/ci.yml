@@ -1,0 +1,68 @@
+# ══════════════════════════════════════════════════════════════════════════
+# CI — the floor this repo's CLAUDE.md already names, run on push.
+# ══════════════════════════════════════════════════════════════════════════
+#
+# "`npx tsc --noEmit` and a valid SDL are the floor for every change." Until
+# now that was a convention; this makes it a gate. Nothing ran on push, and
+# Vercel deploys straight to production — so the first report of a broken
+# schema was the API returning 500 to `ccaweb`, `ccaui` and `ccaadmin` at once.
+#
+# The SDL check is the one that is specific to this repo: `tsc` proves
+# `typeDefs.ts` holds a valid TypeScript string and says nothing about the
+# GraphQL inside it. See `scripts/check-sdl.mjs`.
+#
+# ── Why the env block is fake ─────────────────────────────────────────────
+#
+# `config/env.ts` validates at import and calls `process.exit(1)` when a
+# variable is missing, so `next build` needs the shape of an environment even
+# though it never opens a connection: route handlers are dynamic and no Prisma
+# query runs at build time. These are deliberately non-secrets — a CI job that
+# needed the real DATABASE_URL to type-check would be a reason not to run CI.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+      JWT_SECRET: ci-only-not-a-secret-000000000000000000
+      SUPABASE_URL: https://ci.invalid
+      SUPABASE_ANON_KEY: ci-only-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Prisma client
+        run: npx prisma generate
+
+      - name: Types
+        run: npx tsc --noEmit
+
+      - name: SDL
+        run: node scripts/check-sdl.mjs
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npx next build

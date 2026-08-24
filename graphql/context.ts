@@ -12,6 +12,8 @@ import type { ClubService } from "@/domains/club/club.service";
 import type { SeasonService } from "@/domains/season/season.service";
 import type { FixtureService } from "@/domains/fixture/fixture.service";
 import type { EnquiryService } from "@/domains/enquiry/enquiry.service";
+import type { ClubManagementService } from "@/domains/club/management.service";
+import type { MatchDayService } from "@/domains/fixture/matchday.service";
 import { prisma } from "@/lib/prisma";
 import { optionalAuthenticate, optionalAdminAuthenticate } from "@/lib/auth";
 import type { AdminAuthContext } from "@/lib/auth";
@@ -29,6 +31,8 @@ import { ClubService as ClubServiceClass } from "@/domains/club/club.service";
 import { SeasonService as SeasonServiceClass } from "@/domains/season/season.service";
 import { FixtureService as FixtureServiceClass } from "@/domains/fixture/fixture.service";
 import { EnquiryService as EnquiryServiceClass } from "@/domains/enquiry/enquiry.service";
+import { ClubManagementService as ClubManagementServiceClass } from "@/domains/club/management.service";
+import { MatchDayService as MatchDayServiceClass } from "@/domains/fixture/matchday.service";
 import type { AuthContext } from "@/utils/types";
 import { IdentityGate, prismaConsentReader } from "@/domains/user/identityGate";
 import type { Viewer } from "@/domains/user/identityVisibility";
@@ -82,6 +86,11 @@ export interface GraphQLContextWithServices {
     seasonService: SeasonService;
     fixtureService: FixtureService;
     enquiryService: EnquiryService;
+    /** The patron console — PLATFORM_ROADMAP 4.3. Authenticated writes. */
+    clubManagementService: ClubManagementService;
+    /** Match day: team sheets, board results, validation. Takes the club
+     *  service because every side-of-the-fixture check is a club permission. */
+    matchDayService: MatchDayService;
   };
 }
 
@@ -107,6 +116,11 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
 
   const viewer: Viewer = { userId: user?.userId ?? null, isStaff: Boolean(admin) };
 
+  // One instance, shared: MatchDayService resolves "which side of this fixture
+  // is the caller acting for?" by asking the club service for a permission, so
+  // both must consult the same authorisation path.
+  const clubManagement = new ClubManagementServiceClass(prisma);
+
   return {
     user,
     admin,
@@ -129,6 +143,8 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       seasonService: new SeasonServiceClass(prisma),
       fixtureService: new FixtureServiceClass(prisma),
       enquiryService: new EnquiryServiceClass(prisma),
+      clubManagementService: clubManagement,
+      matchDayService: new MatchDayServiceClass(prisma, clubManagement),
     },
   };
 }

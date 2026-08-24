@@ -1181,4 +1181,241 @@ export const typeDefs = `#graphql
     adminUpdateSchoolEnquiryStatus(id: ID!, status: EnquiryStatus!): SchoolEnquiry!
   }
 
+
+  # ===========================================================================
+  # THE PATRON CONSOLE — PLATFORM_ROADMAP Milestone 4.3
+  # ---------------------------------------------------------------------------
+  # The first write surface outside the academy. Everything below is
+  # authenticated with a PLAYER token and authorised per club by
+  # domains/club/permissions.ts.
+  #
+  # These types are management-only and are never returned by a public query.
+  # That is what lets them carry two things the public schema must never show:
+  #
+  #   · **real names.** BUILD_PLAN §4.3 gates public *display*. A patron is the
+  #     teacher responsible to the school for these children, and a register
+  #     that read "Brenda A." would be unusable by the one person who has to
+  #     take it.
+  #   · **joinCode.** §3.3 invariant 6 — secret, and this is the authenticated
+  #     patron surface it was reserved for.
+  #
+  # A new query returning any of these types must repeat the permission check.
+  # There is no public path that could inherit one by accident.
+  # ===========================================================================
+
+  enum MembershipRole {
+    PLAYER
+    CAPTAIN
+    PATRON
+    ASSISTANT_COACH
+  }
+
+  enum MembershipStatus {
+    PENDING
+    ACTIVE
+    LEFT
+    REMOVED
+  }
+
+  enum AttendanceState {
+    PRESENT
+    EXCUSED
+    ABSENT
+  }
+
+  enum SessionStatus {
+    SCHEDULED
+    HELD
+    CANCELLED
+  }
+
+  "A club the caller can manage, for the console's club switcher."
+  type ManagedClub {
+    id: ID!
+    slug: String!
+    name: String!
+    shortName: String!
+    region: String!
+    level: ClubLevel!
+    crest: Crest
+    myRole: MembershipRole!
+  }
+
+  "The console header: the club, its secret join code, and what needs a decision."
+  type ClubConsole {
+    club: ManagedClubDetail!
+    "How many people have entered the join code and are waiting to be admitted."
+    pendingCount: Int!
+    activeCount: Int!
+    nextSession: ManagedSession
+  }
+
+  type ManagedClubDetail {
+    id: ID!
+    slug: String!
+    name: String!
+    shortName: String!
+    region: String!
+    level: ClubLevel!
+    status: ClubStatus!
+    "Secret — §3.3 invariant 6. Only ever on this authenticated type."
+    joinCode: String!
+    crest: Crest
+    schoolId: ID
+    schoolName: String
+  }
+
+  "One row of the club roster, as the patron sees it. Names are NOT reduced."
+  type ClubMember {
+    id: ID!
+    userId: ID!
+    username: String!
+    fullName: String!
+    role: MembershipRole!
+    status: MembershipStatus!
+    schoolYear: String
+    boardOrder: Int
+    rating: Int!
+    joinedAt: DateTime!
+  }
+
+  type ManagedSession {
+    id: ID!
+    title: String!
+    startsAt: DateTime!
+    location: String
+    status: SessionStatus!
+    presentCount: Int!
+    excusedCount: Int!
+    absentCount: Int!
+  }
+
+  "Every active member, marked or not — a register with people missing is not a record."
+  type RegisterRow {
+    member: ClubMember!
+    state: AttendanceState
+  }
+
+  type SessionRegister {
+    session: ManagedSession!
+    rows: [RegisterRow!]!
+  }
+
+  "A player the caller may name on a board. Strongest first."
+  type EligiblePlayer {
+    userId: ID!
+    username: String!
+    fullName: String!
+    rating: Int!
+    schoolYear: String
+    boardOrder: Int
+  }
+
+  "One board as the console sees it — both player ids, the scoresheet, the stamp."
+  type ManagedBoard {
+    id: ID!
+    boardNumber: Int!
+    homeColor: PieceColor!
+    "White-first, always. homeColor is what converts to a home-first score."
+    result: GameResult
+    homeUserId: ID
+    awayUserId: ID
+    homeName: String
+    awayName: String
+    scoresheetUrl: String
+    moveCount: Int
+    "Set once, at validation. Non-null means this board has been rated."
+    ratedAt: DateTime
+    recordedAt: DateTime
+  }
+
+  type MatchDayFixture {
+    id: ID!
+    scheduledAt: DateTime!
+    venue: String
+    status: FixtureStatus!
+    competition: Competition!
+    isBye: Boolean!
+    boardCount: Int!
+    "Derived from the boards. Never entered — §3.3 invariant 1."
+    homeScore: Float!
+    awayScore: Float!
+    homeClub: ClubSummary
+    awayClub: ClubSummary
+    boards: [ManagedBoard!]!
+  }
+
+  type TeamSheetView {
+    fixture: MatchDayFixture!
+    "Which side the caller is filing for."
+    side: String!
+    clubId: ID!
+    "False once a result exists: board order identifies the players in a played game."
+    editable: Boolean!
+    eligible: [EligiblePlayer!]!
+  }
+
+  input ClubSessionInput {
+    title: String!
+    startsAt: DateTime!
+    location: String
+  }
+
+  input ClubSessionUpdateInput {
+    title: String
+    startsAt: DateTime
+    location: String
+    status: SessionStatus
+  }
+
+  input AttendanceInput {
+    userId: ID!
+    state: AttendanceState!
+  }
+
+  input TeamSheetBoardInput {
+    boardNumber: Int!
+    userId: ID!
+  }
+
+  input RecordBoardResultInput {
+    fixtureId: ID!
+    boardNumber: Int!
+    "White-first. There is no home-first encoding — §3.3 invariant 5."
+    result: GameResult!
+    moveCount: Int
+    scoresheetUrl: String
+  }
+
+  extend type Query {
+    "Clubs the caller is a patron or assistant coach of."
+    myManagedClubs: [ManagedClub!]!
+    clubConsole(clubId: ID!): ClubConsole!
+    clubMembers(clubId: ID!, status: MembershipStatus): [ClubMember!]!
+    clubSessions(clubId: ID!, limit: Int): [ManagedSession!]!
+    sessionRegister(sessionId: ID!): SessionRegister!
+    teamSheet(fixtureId: ID!): TeamSheetView!
+    "Fixtures this club still has to file or have signed off."
+    clubMatchDayQueue(clubId: ID!): [MatchDayFixture!]!
+  }
+
+  extend type Mutation {
+    "Admit a pending join-code request, or decline it."
+    decideMembership(membershipId: ID!, admit: Boolean!): ClubMember!
+    setMembershipRole(membershipId: ID!, role: MembershipRole!): ClubMember!
+    removeMember(membershipId: ID!): ClubMember!
+
+    createClubSession(clubId: ID!, input: ClubSessionInput!): ManagedSession!
+    updateClubSession(sessionId: ID!, input: ClubSessionUpdateInput!): ManagedSession!
+    "Replaces the whole register in one write — a patron marks a room, not a person."
+    markAttendance(sessionId: ID!, entries: [AttendanceInput!]!): ManagedSession!
+
+    "Replaces this club's whole sheet. Refused once a result exists."
+    submitTeamSheet(fixtureId: ID!, boards: [TeamSheetBoardInput!]!): MatchDayFixture!
+    "Either club may record any board. Every write appends an event; none erase one."
+    recordBoardResult(input: RecordBoardResultInput!): MatchDayFixture!
+    "The arbiter's signature: freezes the table entry and rates every board, once."
+    validateFixture(fixtureId: ID!): MatchDayFixture!
+  }
+
 `;

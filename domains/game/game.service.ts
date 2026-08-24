@@ -8,7 +8,7 @@ import {
   AuthorizationError,
 } from "@/utils/types";
 import { UserService } from "../user/user.service";
-import { glicko2Update, DEFAULT_RD, DEFAULT_VOL } from "./glicko2";
+import { applyPairRating, type WhiteScore } from "./ratingWrite";
 
 const XP_WIN = 20;
 const XP_DRAW = 10;
@@ -322,58 +322,18 @@ export class GameService {
     // board's game is rated once, later, at arbiter validation.
     if (ratingDeferredToValidation(game.validationState)) return;
 
-    const whiteState = await this.getOrInitRating(game.whiteId, game.white.rating);
-    const blackState = await this.getOrInitRating(game.blackId, game.black.rating);
+    const whiteScore: WhiteScore =
+      game.result === GameResult.WHITE_WIN ? 1 : game.result === GameResult.BLACK_WIN ? 0 : 0.5;
 
-    const whiteScore =
-      game.result === GameResult.WHITE_WIN
-        ? 1
-        : game.result === GameResult.BLACK_WIN
-          ? 0
-          : 0.5;
-    const blackScore = 1 - whiteScore;
-
-    // Both updates use the opponent's PRE-game state.
-    const whiteNew = glicko2Update(whiteState, blackState, whiteScore);
-    const blackNew = glicko2Update(blackState, whiteState, blackScore);
-
-    await this.prisma.$transaction([
-      this.upsertRating(game.whiteId, whiteNew),
-      this.upsertRating(game.blackId, blackNew),
-      this.prisma.user.update({
-        where: { id: game.whiteId },
-        data: { rating: toDisplayRating(whiteNew.rating) },
-      }),
-      this.prisma.user.update({
-        where: { id: game.blackId },
-        data: { rating: toDisplayRating(blackNew.rating) },
-      }),
-    ]);
-  }
-
-  private async getOrInitRating(userId: string, fallbackRating: number) {
-    const row = await this.prisma.playerRating.findUnique({ where: { userId } });
-    if (row) return { rating: row.rating, rd: row.deviation, vol: row.volatility };
-    return { rating: fallbackRating, rd: DEFAULT_RD, vol: DEFAULT_VOL };
-  }
-
-  private upsertRating(
-    userId: string,
-    state: { rating: number; rd: number; vol: number }
-  ) {
-    return this.prisma.playerRating.upsert({
-      where: { userId },
-      create: {
-        userId,
-        rating: state.rating,
-        deviation: state.rd,
-        volatility: state.vol,
-      },
-      update: {
-        rating: state.rating,
-        deviation: state.rd,
-        volatility: state.vol,
-      },
+    // One writer for both rating paths — this one and fixture validation.
+    // See `ratingWrite.ts` for why they must not be two implementations.
+    await applyPairRating(this.prisma, {
+      whiteId: game.whiteId,
+      blackId: game.blackId,
+      whiteFallbackRating: game.white.rating,
+      blackFallbackRating: game.black.rating,
+      whiteScore,
     });
   }
+
 }

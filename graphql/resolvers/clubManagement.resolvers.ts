@@ -295,9 +295,6 @@ type LoadedFixture = Awaited<
 function toMatchDayFixture(fixture: LoadedFixture) {
   return {
     ...fixture,
-    competition: (fixture as { competition?: string }).competition ?? "DIVISION",
-    homeScore: (fixture as { homeScore?: number }).homeScore ?? 0,
-    awayScore: (fixture as { awayScore?: number }).awayScore ?? 0,
     homeClub: clubSummary(fixture.homeClub),
     awayClub: clubSummary(fixture.awayClub),
     boards: fixture.boards.map((b) => ({

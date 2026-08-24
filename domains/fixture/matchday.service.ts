@@ -67,6 +67,10 @@ export class MatchDayService {
       select: {
         id: true, status: true, isBye: true, boardCount: true, scheduledAt: true,
         venue: true, homeClubId: true, awayClubId: true, arbiterId: true,
+        // The derived score and the competition are part of every response
+        // this service returns. Leaving them out let the resolver fall back to
+        // 0-0, which is a wrong answer that looks like a real one.
+        competition: true, homeScore: true, awayScore: true,
         homeClub: { select: { id: true, name: true, shortName: true, slug: true } },
         awayClub: { select: { id: true, name: true, shortName: true, slug: true } },
         boards: {

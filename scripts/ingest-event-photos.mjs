@@ -23,6 +23,21 @@
  *     [--slug custom-slug] [--type EVENT_RECAP] [--highlights 10]
  *     [--featured] [--draft] [--body "Longer recap text…"] [--dry-run]
  *     [--api https://api.dchessacademy.com]
+ *
+ * Curation options, for when "every Nth frame" is not good enough:
+ *   --tags a,b,c        tags to store (default: photos,on-campus). An update
+ *                       replaces the whole array, so passing this is how you
+ *                       avoid wiping tags an existing post already carries.
+ *   --highlight 1388,…  source basenames to flag as highlights, instead of
+ *                       spacing --highlights evenly across the set. The
+ *                       highlights are the collage on the feed, so which ones
+ *                       they are is an editorial decision, not an interval.
+ *   --cover IMG_1388    source basename to use as the cover. Default is the
+ *                       first landscape highlight.
+ *   --body-file path    a text file of paragraphs, blank-line separated, in
+ *                       place of --body. `## ` / `### ` start a heading, `- `
+ *                       a bullet list, `> ` a blockquote, `**bold**` inline.
+ *                       Recaps have structure; flat paragraphs lose it.
  */
 
 import { createRequire } from "node:module";
@@ -69,6 +84,15 @@ if (!DIR || !TITLE) {
 }
 const TYPE = args.type ?? "EVENT_RECAP";
 const HIGHLIGHT_COUNT = Number(args.highlights ?? 10);
+const TAGS = (args.tags ?? "photos,on-campus").split(",").map((t) => t.trim()).filter(Boolean);
+// Basenames, compared without extension so --highlight IMG_1388 matches
+// IMG_1388.jpg / .jpeg / .heic alike.
+const stem = (f) => f.replace(/\.[^.]+$/, "");
+const HIGHLIGHT_NAMES = (args.highlight ?? "")
+  .split(",")
+  .map((h) => stem(h.trim()))
+  .filter(Boolean);
+const COVER_NAME = args.cover ? stem(args.cover) : null;
 const SLUG =
   args.slug ??
   TITLE.toLowerCase()
@@ -194,14 +218,14 @@ async function processOne(file, index, total) {
       `[dry] ${file} → display ${display.info.width}x${display.info.height} ` +
         `${(display.data.length / 1024).toFixed(0)}KB, thumb ${(thumb.data.length / 1024).toFixed(0)}KB`
     );
-    return { url: `dry://${base}.jpg`, thumbUrl: `dry://${base}.webp`,
+    return { file, url: `dry://${base}.jpg`, thumbUrl: `dry://${base}.webp`,
       width: display.info.width, height: display.info.height };
   }
 
   const url = await upload(display.data, "image/jpeg", `${base}.jpg`);
   const thumbUrl = await upload(thumb.data, "image/webp", `${base}-thumb.webp`);
   console.log(`[${index + 1}/${total}] ${file} → ${display.info.width}x${display.info.height}`);
-  return { url, thumbUrl, width: display.info.width, height: display.info.height };
+  return { file, url, thumbUrl, width: display.info.width, height: display.info.height };
 }
 
 async function mapPool(items, worker, size) {
@@ -228,6 +252,61 @@ function pickHighlights(count, total) {
   return picked;
 }
 
+// `**bold**` runs, split into Tiptap text nodes. Nothing else is inline —
+// a recap needs emphasis, not a markdown implementation.
+function inline(text) {
+  return text
+    .split(/(\*\*[^*]+\*\*)/)
+    .filter(Boolean)
+    .map((part) =>
+      part.startsWith("**") && part.endsWith("**")
+        ? { type: "text", text: part.slice(2, -2), marks: [{ type: "bold" }] }
+        : { type: "text", text: part }
+    );
+}
+
+const para = (t) => ({ type: "paragraph", content: inline(t) });
+
+/** Blank-line-separated blocks → a Tiptap document. `##`/`###` heading,
+ *  `- ` bullet list, `> ` blockquote, anything else a paragraph. */
+function toTiptap(text) {
+  const content = [];
+  for (const block of text.split(/\n\s*\n/)) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
+
+    const heading = lines[0].match(/^(#{2,3})\s+(.*)$/);
+    if (heading) {
+      content.push({
+        type: "heading",
+        attrs: { level: heading[1].length },
+        content: inline(heading[2]),
+      });
+      lines.shift();
+      if (!lines.length) continue;
+    }
+
+    if (lines.every((l) => l.startsWith("- "))) {
+      content.push({
+        type: "bulletList",
+        content: lines.map((l) => ({
+          type: "listItem",
+          content: [para(l.slice(2))],
+        })),
+      });
+      continue;
+    }
+
+    if (lines.every((l) => l.startsWith("> "))) {
+      content.push({ type: "blockquote", content: [para(lines.map((l) => l.slice(2)).join(" "))] });
+      continue;
+    }
+
+    content.push(para(lines.join(" ")));
+  }
+  return { type: "doc", content };
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -246,33 +325,43 @@ console.log(
 
 const processed = await mapPool(files, (f, i) => processOne(f, i, files.length), CONCURRENCY);
 
-const highlightIdx = pickHighlights(HIGHLIGHT_COUNT, processed.length);
-const images = processed.map((img, i) => ({ ...img, highlight: highlightIdx.has(i) }));
+// A named --highlight list is an editorial choice and always wins; even
+// spacing is the fallback for an uncurated dump.
+const named = HIGHLIGHT_NAMES.length
+  ? new Set(processed.filter((img) => HIGHLIGHT_NAMES.includes(stem(img.file))).map((img) => img.file))
+  : null;
+if (named) {
+  const missing = HIGHLIGHT_NAMES.filter((n) => !processed.some((img) => stem(img.file) === n));
+  if (missing.length) console.warn(`  ! --highlight names not in --dir: ${missing.join(", ")}`);
+}
+const spaced = named ? null : pickHighlights(HIGHLIGHT_COUNT, processed.length);
+const images = processed.map((img, i) => ({
+  ...img,
+  highlight: named ? named.has(img.file) : spaced.has(i),
+}));
 
-// Cover: first landscape highlight reads best in wide hero slots.
+// Cover: the named one, else the first landscape highlight — wide frames read
+// best in the hero and share-card slots, which are all landscape.
 const cover =
+  (COVER_NAME && images.find((img) => stem(img.file) === COVER_NAME)) ??
   images.find((img) => img.highlight && img.width >= img.height) ??
   images.find((img) => img.highlight) ??
   images[0];
+if (COVER_NAME && stem(cover.file) !== COVER_NAME) {
+  console.warn(`  ! --cover ${COVER_NAME} not in --dir; fell back to ${cover.file}`);
+}
+
+const bodySource = args["body-file"] ? readFileSync(args["body-file"], "utf8") : args.body;
+const bodyText = bodySource ?? args.excerpt ?? null;
+const bodyJson = bodyText ? JSON.stringify(toTiptap(bodyText)) : null;
 
 if (args["dry-run"]) {
+  console.log(`\n[dry] body:\n${bodyJson ? JSON.stringify(JSON.parse(bodyJson), null, 1) : "(none)"}`);
   console.log(`[dry] would write activity "${SLUG}": ${images.length} images, ` +
-    `${highlightIdx.size} highlights, cover ${cover.url}`);
+    `${images.filter((i) => i.highlight).length} highlights, cover ${cover.file}`);
   process.exit(0);
 }
 
-// The article page renders rich bodyJson (Tiptap); build a simple doc of
-// paragraphs from --body so the recap actually shows on the event page.
-const bodyText = args.body ?? args.excerpt ?? null;
-const bodyJson = bodyText
-  ? JSON.stringify({
-      type: "doc",
-      content: bodyText
-        .split(/\n+/)
-        .filter((p) => p.trim())
-        .map((p) => ({ type: "paragraph", content: [{ type: "text", text: p.trim() }] })),
-    })
-  : null;
 
 const input = {
   type: TYPE,
@@ -284,7 +373,7 @@ const input = {
   region: args.region ?? null,
   eventDate: args.date ? new Date(args.date).toISOString() : null,
   featured: Boolean(args.featured),
-  tags: ["photos", "on-campus"],
+  tags: TAGS,
   images: images.map((img) => ({
     url: img.url,
     thumbUrl: img.thumbUrl,

@@ -61,6 +61,36 @@ export class MatchDayService {
 
   // ── shared loading and side resolution ────────────────────────────────────
 
+  /**
+   * INVARIANT §3.3 #1, applied on the way OUT as well as the way in.
+   *
+   * `homeScore`/`awayScore` are a cache. `recordBoardResult` keeps them
+   * current, but a fixture nothing in this service has ever written — a seeded
+   * one, or one whose boards arrived by another route — carries whatever was
+   * stored, which may be zero while its boards plainly say otherwise.
+   *
+   * That is not hypothetical: the same LIVE fixture returned 1.5-0.5 from the
+   * public `fixtures` query, which recomputes, and 0-0 from
+   * `clubMatchDayQueue`, which trusted the column. The patron console showed a
+   * goalless draw underneath two decided boards.
+   *
+   * So both paths now derive, through the same pure module the scoring tests
+   * cover. The stored columns stay — division tables read them — but nothing
+   * this service returns believes them.
+   */
+  private static withDerivedScore<
+    T extends { boards: { boardNumber: number; homeColor: string; result: string | null }[] },
+  >(fixture: T): T & { homeScore: number; awayScore: number } {
+    const points = fixtureBoardPoints(
+      fixture.boards.map((b) => ({
+        boardNumber: b.boardNumber,
+        homeColor: b.homeColor as "WHITE" | "BLACK",
+        result: b.result as GameResultValue | null,
+      }))
+    );
+    return { ...fixture, homeScore: points.home, awayScore: points.away };
+  }
+
   private async loadFixture(id: string) {
     const fixture = await this.prisma.fixture.findUnique({
       where: { id },
@@ -85,7 +115,7 @@ export class MatchDayService {
       },
     });
     if (!fixture) throw new NotFoundError("Fixture not found");
-    return fixture;
+    return MatchDayService.withDerivedScore(fixture);
   }
 
   /**
@@ -418,7 +448,7 @@ export class MatchDayService {
   async clubMatchDayQueue(userId: string, clubId: string) {
     await this.management.requireClubAction(userId, clubId, "club:manage");
 
-    return this.prisma.fixture.findMany({
+    const rows = await this.prisma.fixture.findMany({
       where: {
         OR: [{ homeClubId: clubId }, { awayClubId: clubId }],
         status: { in: ["SCHEDULED", "TEAM_SHEETS", "LIVE", "AWAITING_VALIDATION"] },
@@ -429,8 +459,12 @@ export class MatchDayService {
         homeScore: true, awayScore: true, competition: true, isBye: true,
         homeClub: { select: { id: true, name: true, shortName: true, slug: true } },
         awayClub: { select: { id: true, name: true, shortName: true, slug: true } },
-        boards: { select: { boardNumber: true, result: true } },
+        // `homeColor` is selected because the score cannot be derived without
+        // it: a WHITE_WIN credits whichever club held White on THAT board.
+        boards: { select: { boardNumber: true, homeColor: true, result: true } },
       },
     });
+
+    return rows.map((row) => MatchDayService.withDerivedScore(row));
   }
 }

@@ -1,0 +1,29 @@
+[
+  {
+    "school": "Government Bilingual High School Limbe",
+    "town": "Limbe",
+    "region": "SOUTH_WEST",
+    "kind": "SECONDARY",
+    "clubs": [
+      { "name": "GBHS Limbe Chess Club", "shortName": "GL", "division": "Fako & Meme" }
+    ]
+  },
+  {
+    "school": "Lycee de Buea",
+    "town": "Buea",
+    "region": "SOUTH_WEST",
+    "kind": "SECONDARY",
+    "clubs": [
+      { "name": "Lycee de Buea Chess Club", "shortName": "LB", "division": "Fako & Meme" }
+    ]
+  },
+  {
+    "school": "University of Buea",
+    "town": "Buea",
+    "region": "SOUTH_WEST",
+    "kind": "UNIVERSITY",
+    "clubs": [
+      { "name": "UB Chess Club", "shortName": "UB", "division": "Fako & Meme" }
+    ]
+  }
+]

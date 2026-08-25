@@ -79,6 +79,7 @@ import {
   ClubStatus,
   Competition,
   ConsentStatus,
+  CupStage,
   EventKind,
   FixtureStatus,
   GameResult,
@@ -610,6 +611,130 @@ async function main() {
     }
   }
   console.log(`  ${fixtureCount} sample fixtures with boards and timeline events`);
+
+  // ── The National Cup draw (SAMPLE) ─────────────────────────────────────────
+  //
+  // The cup existed in the schema, in the API and in the public bracket
+  // component, and had never once been seeded — so `/competitions` shipped
+  // showing "The cup has not been drawn" and nobody had seen the bracket with
+  // anything in it. A component that has never rendered its real state is a
+  // component nobody has reviewed.
+  //
+  // Eight clubs, drawn across divisions the way a national cup actually is:
+  // the league is regional, the cup is not, so the pairings deliberately cross
+  // catchments. Two quarter-finals are played, two are not, and both
+  // semi-finals plus the final are PLACEHOLDERS — rows with no clubs and a
+  // `homeSourceLabel` of "Winner QF1".
+  //
+  // Those placeholders are the point. BUILD_PLAN is explicit that an undecided
+  // tie is a real row rather than a gap, because hiding it makes the
+  // competition look shorter than it is. A seed with only played ties would
+  // never exercise that path.
+  const CUP: {
+    key: string;
+    stage: CupStage;
+    home: string | null;
+    away: string | null;
+    homeLabel?: string;
+    awayLabel?: string;
+    status: FixtureStatus;
+    boards?: Outcome[];
+    day: number;
+  }[] = [
+    // Quarter-finals — the two played ones give the bracket real scores.
+    { key: "qf1", stage: CupStage.QUARTER_FINAL, home: "limbe-a", away: "bamenda-a", status: FixtureStatus.VALIDATED, boards: ["H", "H", "D", "A"], day: 1 },
+    { key: "qf2", stage: CupStage.QUARTER_FINAL, home: "douala-a", away: "buea-a", status: FixtureStatus.VALIDATED, boards: ["A", "D", "A", "A"], day: 1 },
+    { key: "qf3", stage: CupStage.QUARTER_FINAL, home: "yaounde-a", away: "kumba-a", status: FixtureStatus.SCHEDULED, day: 2 },
+    { key: "qf4", stage: CupStage.QUARTER_FINAL, home: "limbe-b", away: "bamenda-b", status: FixtureStatus.SCHEDULED, day: 2 },
+
+    // Semi-finals and the final: no clubs yet, and that is a real row.
+    { key: "sf1", stage: CupStage.SEMI_FINAL, home: null, away: null, homeLabel: "Winner QF1", awayLabel: "Winner QF2", status: FixtureStatus.SCHEDULED, day: 3 },
+    { key: "sf2", stage: CupStage.SEMI_FINAL, home: null, away: null, homeLabel: "Winner QF3", awayLabel: "Winner QF4", status: FixtureStatus.SCHEDULED, day: 3 },
+    { key: "final", stage: CupStage.FINAL, home: null, away: null, homeLabel: "Winner SF1", awayLabel: "Winner SF2", status: FixtureStatus.SCHEDULED, day: 4 },
+  ];
+
+  const clubExists = new Set(CLUBS.map((c) => c.key));
+  let cupCount = 0;
+
+  for (const tie of CUP) {
+    // A draw referencing a club this seed did not create would fail on the
+    // foreign key partway through, exactly the way the division fixture list
+    // used to. Skip instead.
+    if ((tie.home && !clubExists.has(tie.home)) || (tie.away && !clubExists.has(tie.away))) continue;
+
+    const fixtureId = `sample-cup-${tie.key}`;
+    const scheduledAt = matchDayDate(4 + tie.day);
+
+    await prisma.fixture.upsert({
+      where: { id: fixtureId },
+      create: {
+        id: fixtureId,
+        seasonId: season.id,
+        // A cup tie belongs to the season, not to a division — the whole point
+        // of the competition is that it crosses them.
+        divisionId: null,
+        competition: Competition.CUP,
+        stage: tie.stage,
+        homeClubId: tie.home ? `sample-club-${tie.home}` : null,
+        awayClubId: tie.away ? `sample-club-${tie.away}` : null,
+        homeSourceLabel: tie.homeLabel ?? null,
+        awaySourceLabel: tie.awayLabel ?? null,
+        scheduledAt,
+        venue: tie.home ? `${LABEL}neutral venue` : null,
+        boardCount: 4,
+        status: tie.status,
+        validatedAt: tie.status === FixtureStatus.VALIDATED ? scheduledAt : null,
+      },
+      update: { status: tie.status, scheduledAt, stage: tie.stage },
+    });
+    cupCount += 1;
+
+    if (!tie.boards) continue;
+
+    const homeTeam = teamByClub.get(tie.home!) ?? [];
+    const awayTeam = teamByClub.get(tie.away!) ?? [];
+
+    for (let b = 1; b <= 4; b += 1) {
+      const homeColor = colorForBoard(b);
+      const outcome = tie.boards[b - 1];
+      await prisma.fixtureBoard.upsert({
+        where: { id: `sample-cfb-${fixtureId}-${b}` },
+        create: {
+          id: `sample-cfb-${fixtureId}-${b}`,
+          fixtureId,
+          boardNumber: b,
+          homeUserId: homeTeam.find((t) => t.boardOrder === b)?.userId ?? null,
+          awayUserId: awayTeam.find((t) => t.boardOrder === b)?.userId ?? null,
+          homeColor,
+          source: GameSource.OTB,
+          result: resultFor(outcome, homeColor),
+          recordedAt: scheduledAt,
+          // Rated at validation, never before — BUILD_PLAN §3.3 #3.
+          ratedAt: tie.status === FixtureStatus.VALIDATED ? scheduledAt : null,
+        },
+        update: { result: resultFor(outcome, homeColor) },
+      });
+    }
+
+    // The derived score, computed the same way the API computes it.
+    const score = tie.boards.reduce(
+      (acc, outcome) => {
+        if (outcome === "H") acc.home += 1;
+        else if (outcome === "A") acc.away += 1;
+        else {
+          acc.home += 0.5;
+          acc.away += 0.5;
+        }
+        return acc;
+      },
+      { home: 0, away: 0 }
+    );
+    await prisma.fixture.update({
+      where: { id: fixtureId },
+      data: { homeScore: score.home, awayScore: score.away },
+    });
+  }
+  console.log(`  ${cupCount} sample cup ties (${CUP.filter((t) => !t.home).length} still placeholders)`);
 
   // ── Honours (SAMPLE) ───────────────────────────────────────────────────────
   const honours = [

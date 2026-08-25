@@ -35,6 +35,16 @@ function clubSummary(
 
 export const clubManagementResolvers = {
   Query: {
+    /**
+     * PLATFORM_ROADMAP 4.2 — the member's own view.
+     *
+     * Sits beside the console's queries rather than in the public club
+     * resolvers because it is authenticated and about the caller. It returns
+     * the caller's own rows only, so there is no consent question to answer.
+     */
+    myMemberships: (_: unknown, __: unknown, ctx: GraphQLContextWithServices) =>
+      ctx.services.clubService.myMemberships(requireUser(ctx)),
+
     myManagedClubs: async (_: unknown, __: unknown, ctx: GraphQLContextWithServices) => {
       const rows = await ctx.services.clubManagementService.myManagedClubs(requireUser(ctx));
       return rows.map((r) => ({ ...r, crest: crestOf(r) }));

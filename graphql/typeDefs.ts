@@ -1418,4 +1418,47 @@ export const typeDefs = `#graphql
     validateFixture(fixtureId: ID!): MatchDayFixture!
   }
 
+
+  # ===========================================================================
+  # MY CLUB — the member's own view. PLATFORM_ROADMAP 4.2
+  # ---------------------------------------------------------------------------
+  # The counterpart to the patron console: same club, the other side of it.
+  #
+  # These carry no other person's data. Everything about fellow members on the
+  # screens this feeds comes from clubRoster, which is the public, already
+  # consent-reduced path (BUILD_PLAN 4.3). A member is not a patron, and does
+  # not get the register.
+  # ===========================================================================
+
+  type MyClub {
+    id: ID!
+    slug: String!
+    name: String!
+    shortName: String!
+    region: String!
+    level: ClubLevel!
+    status: ClubStatus!
+    crest: Crest
+    schoolName: String
+    memberCount: Int!
+  }
+
+  "The caller's own standing in one club. Includes memberships still PENDING."
+  type MyMembership {
+    id: ID!
+    role: MembershipRole!
+    "PENDING means a join code was entered and a patron has not decided yet."
+    status: MembershipStatus!
+    schoolYear: String
+    "A-team board 1-4. Null means not currently selected."
+    boardOrder: Int
+    joinedAt: DateTime!
+    club: MyClub!
+  }
+
+  extend type Query {
+    "Every club the caller belongs to, pending ones included."
+    myMemberships: [MyMembership!]!
+  }
+
 `;

@@ -188,6 +188,69 @@ export class ClubService {
   }
 
   /** Used by the `Club.memberCount` field resolver when the parent lacks one. */
+  // ── The member's own view — PLATFORM_ROADMAP 4.2 ──────────────────────────
+
+  /**
+   * Every club the caller belongs to, from their own point of view.
+   *
+   * Deliberately **not** filtered to `ACTIVE`. A student who has entered a
+   * join code is `PENDING` until a patron admits them, and that is precisely
+   * the person with the most urgent question — "did it work?". Hiding pending
+   * memberships would leave them looking at an empty screen after doing the
+   * one thing the join flow asked of them.
+   *
+   * `LEFT` and `REMOVED` are excluded: they are history, and a club you are no
+   * longer in is not "my club".
+   *
+   * This is the caller's own row, so there is no consent question to answer —
+   * `boardOrder` and `schoolYear` are facts about the person asking. Everything
+   * about *other* members on the screens this feeds comes from `clubRoster`,
+   * which is the public, already-reduced path (BUILD_PLAN §4.3).
+   */
+  async myMemberships(userId: string) {
+    const rows = await this.prisma.clubMembership.findMany({
+      where: { userId, status: { in: ["PENDING", "ACTIVE"] } },
+      orderBy: [{ status: "asc" }, { joinedAt: "asc" }],
+      select: {
+        id: true,
+        role: true,
+        status: true,
+        schoolYear: true,
+        boardOrder: true,
+        joinedAt: true,
+        club: {
+          select: {
+            id: true, slug: true, name: true, shortName: true,
+            region: true, level: true, status: true, crestJson: true,
+            school: { select: { name: true } },
+            _count: { select: { memberships: { where: { status: "ACTIVE" } } } },
+          },
+        },
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      role: row.role,
+      status: row.status,
+      schoolYear: row.schoolYear,
+      boardOrder: row.boardOrder,
+      joinedAt: row.joinedAt,
+      club: {
+        id: row.club.id,
+        slug: row.club.slug,
+        name: row.club.name,
+        shortName: row.club.shortName,
+        region: row.club.region,
+        level: row.club.level,
+        status: row.club.status,
+        crest: parseCrest(row.club.crestJson),
+        schoolName: row.club.school?.name ?? null,
+        memberCount: row.club._count.memberships,
+      },
+    }));
+  }
+
   async memberCount(clubId: string): Promise<number> {
     const counts = await this.repo.memberCounts([clubId]);
     return counts.get(clubId) ?? 0;

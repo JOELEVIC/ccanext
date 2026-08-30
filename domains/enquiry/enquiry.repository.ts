@@ -1,5 +1,5 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
-import { EnquiryStatus, ClubLevel } from "@prisma/client";
+import { EnquiryStatus, ClubKind, ClubLevel } from "@prisma/client";
 
 export type ThrottleScope = "IP" | "PHONE";
 
@@ -66,7 +66,9 @@ export class EnquiryRepository {
     schoolName: string;
     town?: string | null;
     region: string;
-    level: ClubLevel;
+    kind: ClubKind;
+    /** Null for an independent enquiry: no school, no education stage. */
+    level: ClubLevel | null;
     sizeBand?: string | null;
     contactName: string;
     contactRole?: string | null;

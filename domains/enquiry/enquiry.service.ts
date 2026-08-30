@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import type { PrismaClient } from "@prisma/client";
-import { ClubLevel, EnquiryStatus } from "@prisma/client";
+import { ClubKind, ClubLevel, EnquiryStatus } from "@prisma/client";
 import { EnquiryRepository } from "./enquiry.repository";
 import { normalizeRegion } from "@/domains/region/regions";
 
@@ -50,6 +50,7 @@ export interface SchoolEnquiryInput {
   schoolName: string;
   town?: string | null;
   region: string;
+  kind?: ClubKind | null;
   level?: ClubLevel | null;
   sizeBand?: string | null;
   contactName: string;
@@ -111,7 +112,9 @@ export class EnquiryService {
     const contactPhone = clean(input.contactPhone);
     const region = normalizeRegion(input.region);
 
-    if (!schoolName) return invalid("A school name is required.");
+    // "school name" would be wrong for an independent club, whose own name
+    // goes in this field. The column keeps its shipped name; the message does not.
+    if (!schoolName) return invalid("A name is required.");
     if (!contactName) return invalid("A contact name is required.");
     if (!contactPhone) return invalid("A contact phone number is required.");
     if (!region) {
@@ -147,7 +150,14 @@ export class EnquiryService {
       schoolName,
       town: clean(input.town) || null,
       region,
-      level: input.level ?? ClubLevel.SECONDARY,
+      // An independent enquiry has no school and therefore no education stage.
+      // The old unconditional default filed every one of them as a secondary
+      // school, which is how they would have reached the staff queue mislabelled.
+      kind: input.kind ?? ClubKind.SCHOOL,
+      level:
+        (input.kind ?? ClubKind.SCHOOL) === ClubKind.INDEPENDENT
+          ? null
+          : (input.level ?? ClubLevel.SECONDARY),
       sizeBand: clean(input.sizeBand) || null,
       contactName,
       contactRole: clean(input.contactRole) || null,

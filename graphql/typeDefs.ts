@@ -1102,10 +1102,14 @@ export const typeDefs = `#graphql
   # ─── Intake ────────────────────────────────────────────────────────────────
 
   input SchoolEnquiryInput {
+    "The organisation's name: the school for a SCHOOL enquiry, the club's own name for an INDEPENDENT one."
     schoolName: String!
     town: String
     "One of Cameroon's ten canonical region keys. Legacy French free text is normalised server-side."
     region: String!
+    "Defaults to SCHOOL. INDEPENDENT is a club with no host institution."
+    kind: ClubKind
+    "The school's education stage. Omit for an INDEPENDENT enquiry — there is no school to have one."
     level: ClubLevel
     sizeBand: String
     contactName: String!
@@ -1131,7 +1135,9 @@ export const typeDefs = `#graphql
     schoolName: String!
     town: String
     region: String!
-    level: ClubLevel!
+    kind: ClubKind!
+    "Null for an independent enquiry: no school, no education stage."
+    level: ClubLevel
     sizeBand: String
     contactName: String!
     contactRole: String

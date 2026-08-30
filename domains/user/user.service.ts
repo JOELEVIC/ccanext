@@ -46,7 +46,9 @@ export class UserService {
     // registration outright rather than leave someone signed up but attached to
     // nothing, believing they joined their school's club (BUILD_PLAN §6).
     const joinCode = data.joinCode?.trim();
-    let club: { id: string; schoolId: string } | null = null;
+    // `schoolId` is null for an independent club — the code still resolves, the
+    // member still joins, there is simply no school to copy onto the account.
+    let club: { id: string; schoolId: string | null } | null = null;
     if (joinCode) {
       club = await this.prisma.club.findFirst({
         where: { joinCode, status: { not: ClubStatus.ARCHIVED } },
@@ -64,7 +66,9 @@ export class UserService {
       role: data.role,
       // `User.schoolId` is legacy but must stay in sync with club affiliation
       // (BUILD_PLAN §2); club membership itself is read from ClubMembership.
-      schoolId: data.schoolId ?? club?.schoolId,
+      // `?? undefined` because an independent club has no school to copy: the
+      // account simply carries none, which is what the legacy column means.
+      schoolId: data.schoolId ?? club?.schoolId ?? undefined,
       profile: data.profile,
       // New accounts seed at an artificial rating of 100 and must complete placement;
       // the placement run then overwrites this with the estimated Elo.

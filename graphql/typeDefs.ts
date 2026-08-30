@@ -788,6 +788,19 @@ export const typeDefs = `#graphql
     UNIVERSITY
   }
 
+  """
+  Whether a club is hosted by an institution or stands on its own.
+
+  A separate axis from ClubLevel, not a third value on it: level is the host
+  institution's education stage, and an independent club has no host and so no
+  stage. On Club this is derived from whether a school is attached — it is
+  never stored, so it cannot disagree with the school field.
+  """
+  enum ClubKind {
+    SCHOOL
+    INDEPENDENT
+  }
+
   enum ClubStatus {
     ONBOARDING
     ACTIVE
@@ -895,10 +908,18 @@ export const typeDefs = `#graphql
     name: String!
     shortName: String!
     region: String!
+    """
+    The host institution's education stage. Meaningful only for a SCHOOL club —
+    read kind first. Kept non-null because it is stored non-null and clients
+    coerce it; for an INDEPENDENT club its value carries no meaning.
+    """
     level: ClubLevel!
+    "SCHOOL when a school is attached, INDEPENDENT when none is. Derived, never stored."
+    kind: ClubKind!
     status: ClubStatus!
     crest: Crest
     foundedOn: DateTime
+    "Null for an independent club — one with no host institution."
     school: School
     "ACTIVE memberships only."
     memberCount: Int!

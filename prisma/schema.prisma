@@ -651,9 +651,25 @@ model Club {
   slug      String     @unique // "gbhs-limbe"
   name      String // "GBHS Limbe Chess Club"
   shortName String // "GL" — 2–3 chars, drives the crest
-  schoolId  String
-  school    School     @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  /// NULL for an independent club — one with no host institution. A chess club
+  /// can be a school's or a town's, and this column is the single source of
+  /// truth for which: `Club.kind` on the GraphQL type is DERIVED from it and is
+  /// deliberately not stored, because a second writable column beside this one
+  /// would be a second source of truth for one fact, free to drift.
+  ///
+  /// `onDelete: Restrict` stays. SET NULL only becomes expressible once the
+  /// column is nullable, and deleting a school would then silently orphan its
+  /// clubs with no audit trail.
+  schoolId  String?
+  school    School?    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   region    String // canonical key, e.g. "SOUTH_WEST"
+  /// The HOST INSTITUTION's education stage, denormalised from `School.kind`
+  /// (see scripts/onboard-clubs.ts) — it was never the club's own attribute.
+  /// Meaningless for an independent club, which has no institution and so no
+  /// stage: it is never rendered for one, and `clubs(level:)` scopes itself to
+  /// clubs that have a school. Deliberately NOT nullable — `Club.level` is
+  /// `ClubLevel!` in the SDL and ccapp coerces it on devices that cannot be
+  /// redeployed atomically, so relaxing it is a breaking output change.
   level     ClubLevel  @default(SECONDARY)
   crestJson Json? // { shield, band, charge } — see BUILD_PLAN §5
   status    ClubStatus @default(ONBOARDING)
@@ -681,6 +697,22 @@ enum ClubLevel {
   UNIVERSITY
 
   @@map("club_level")
+}
+
+/// Whether a club is hosted by an institution or stands on its own.
+///
+/// Deliberately a SEPARATE axis from `ClubLevel`, not a third value on it:
+/// level is the host institution's education stage, and a club with no host
+/// has no stage. Conflating them would make "has no school" a type-legal value
+/// for `Division.level`, where it is meaningless.
+///
+/// On `Club` this is DERIVED from `schoolId IS NULL` and never stored. It is
+/// stored only on `SchoolEnquiry`, which has no school to derive from.
+enum ClubKind {
+  SCHOOL
+  INDEPENDENT
+
+  @@map("club_kind")
 }
 
 enum ClubStatus {
@@ -1050,10 +1082,19 @@ enum ConsentMethod {
 
 model SchoolEnquiry {
   id           String        @id @default(uuid())
+  /// The organisation's name: the school for a SCHOOL enquiry, the club's own
+  /// name for an INDEPENDENT one. The column name is shipped; only the label
+  /// the enquirer reads changed.
   schoolName   String
   town         String?
   region       String
-  level        ClubLevel     @default(SECONDARY)
+  /// STORED here, unlike on `Club`. An enquiry has no foreign key — only a
+  /// typed-in name — so there is nothing to derive the kind from.
+  kind         ClubKind      @default(SCHOOL)
+  /// NULL for an independent enquiry: no school, no education stage. The old
+  /// `@default(SECONDARY)` filed every school-less enquiry as a secondary
+  /// school.
+  level        ClubLevel?
   sizeBand     String?
   contactName  String
   contactRole  String?

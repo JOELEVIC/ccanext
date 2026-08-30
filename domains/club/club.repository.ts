@@ -28,7 +28,12 @@ function publicWhere(filters: Partial<ClubListFilters> = {}): Prisma.ClubWhereIn
   return {
     status: { in: PUBLIC_CLUB_STATUSES },
     ...(filters.region ? { region: filters.region } : {}),
-    ...(filters.level ? { level: filters.level } : {}),
+    // `level` is the HOST INSTITUTION's education stage, so filtering by it
+    // means "clubs hosted at a university" — which is what it has always meant
+    // and is only answerable for a club that has a host. An independent club
+    // carries a stored SECONDARY that means nothing; without this it would
+    // surface under "secondary schools", which is exactly wrong.
+    ...(filters.level ? { level: filters.level, schoolId: { not: null } } : {}),
     ...(search
       ? {
           OR: [

@@ -57,6 +57,14 @@ export const clubResolvers = {
 
     honours: (parent: PublicClub) => parent.honours ?? [],
     school: (parent: PublicClub & { school?: unknown }) => parent.school ?? null,
+
+    /**
+     * Derived, never stored. `schoolId IS NULL` already answers "is this a
+     * school club?", and a stored column beside it would be a second writable
+     * source of truth for one fact — free to say SCHOOL while `school` is null.
+     */
+    kind: (parent: PublicClub & { schoolId?: string | null; school?: unknown }) =>
+      parent.schoolId || parent.school ? "SCHOOL" : "INDEPENDENT",
   },
 
   ClubHonour: {

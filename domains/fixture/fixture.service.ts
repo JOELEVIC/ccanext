@@ -366,11 +366,27 @@ export class FixtureService {
 
     const memberCounts = await this.clubs.memberCounts(clubs.map((c) => c.id));
 
-    const bySchool = new Map<
-      string,
-      { school: (typeof clubs)[number]["school"]; clubCount: number; memberCount: number; matchPoints: number }
-    >();
+    /**
+     * A school table can only contain clubs that have a school.
+     *
+     * An independent club has no host institution, so it belongs to no row
+     * here — it is not missing from the table, it is not the kind of thing the
+     * table counts. Its match points still stand in the club and player
+     * tables, which are the ones that rank clubs.
+     *
+     * Skipping is deliberate rather than defensive: SchoolStanding.school is
+     * non-null in the SDL, so an independent club reaching this loop would
+     * either key a row on the empty string or crash a consumer.
+     */
+    type SchoolRow = {
+      school: NonNullable<(typeof clubs)[number]["school"]>;
+      clubCount: number;
+      memberCount: number;
+      matchPoints: number;
+    };
+    const bySchool = new Map<string, SchoolRow>();
     for (const club of clubs) {
+      if (!club.schoolId || !club.school) continue;
       const entry = bySchool.get(club.schoolId) ?? {
         school: club.school,
         clubCount: 0,

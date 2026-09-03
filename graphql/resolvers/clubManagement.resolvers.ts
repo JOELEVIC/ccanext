@@ -22,6 +22,19 @@ function requireUser(ctx: GraphQLContextWithServices) {
   return ctx.user.userId;
 }
 
+/**
+ * The same check, for the one operation in this file a student performs.
+ *
+ * "Sign in to manage a club" is the right sentence for the console and the
+ * wrong one for somebody spending the code their teacher gave them — they are
+ * not managing anything, and being told they are is how a person decides the
+ * app is not for them.
+ */
+function requireMember(ctx: GraphQLContextWithServices) {
+  if (!ctx.user) throw new AuthenticationError("Sign in to join a club");
+  return ctx.user.userId;
+}
+
 /** `crestJson` is stored as JSON; the SDL exposes it as a typed `Crest`. */
 function crestOf(row: { crestJson?: unknown }) {
   return (row.crestJson as { shield: string; band: string; charge: string } | null) ?? null;
@@ -148,6 +161,17 @@ export const clubManagementResolvers = {
   },
 
   Mutation: {
+    /**
+     * The member's own side of the join flow, so it sits beside
+     * `myMemberships` rather than with the console's mutations: the caller is
+     * acting on their own account, not on somebody else's roster.
+     */
+    joinClubByCode: (
+      _: unknown,
+      { joinCode }: { joinCode: string },
+      ctx: GraphQLContextWithServices
+    ) => ctx.services.clubService.joinByCode(requireMember(ctx), joinCode),
+
     decideMembership: (
       _: unknown,
       { membershipId, admit }: { membershipId: string; admit: boolean },

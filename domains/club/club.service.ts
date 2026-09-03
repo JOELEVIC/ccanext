@@ -5,6 +5,8 @@ import { SeasonService, type PublicDivisionEntry } from "@/domains/season/season
 import { toPublicPlayer, type PublicPlayer, type Crest } from "@/domains/user/publicPlayer";
 import { parseCrest } from "@/domains/user/publicPlayer";
 import { REGION_KEYS, REGION_OPENS_IN, normalizeRegion } from "@/domains/region/regions";
+import { decideJoin, type HeldMembership } from "./joinByCode";
+import { ValidationError } from "@/utils/types";
 
 export interface ClubConnection {
   nodes: PublicClub[];
@@ -249,6 +251,108 @@ export class ClubService {
         memberCount: row.club._count.memberships,
       },
     }));
+  }
+
+  /**
+   * Spend a join code on an account that already exists.
+   *
+   * The counterpart to `RegisterInput.joinCode`, which is the only place a code
+   * could be spent before this: that one covers the student who arrives holding
+   * the code, and left everybody else — the person who installed the app before
+   * their school signed up, the student whose club started this term — with an
+   * account and no way to attach it to a club.
+   *
+   * The decision itself is `decideJoin`, which is pure and tested. This method
+   * is the part that talks to Postgres.
+   *
+   * ── Never a second request ───────────────────────────────────────────────
+   *
+   * Every path here updates or returns the single row unique on (club, user).
+   * A student who taps twice, or reinstalls and tries again, does not reach a
+   * patron as a stranger asking again — which is exactly what the pending
+   * screen already promises them.
+   *
+   * ── PENDING, always ──────────────────────────────────────────────────────
+   *
+   * Holding a code proves which club, not that a patron has admitted you. This
+   * mutation can no more make somebody a member than the registration path can.
+   */
+  async joinByCode(userId: string, rawCode: string) {
+    const joinCode = rawCode.trim().toUpperCase();
+    if (!joinCode) throw new ValidationError("Enter your club's join code.");
+
+    // The same lookup the registration path makes, and the same refusal, so a
+    // mistyped code reads identically whichever door it was typed at.
+    const club = await this.prisma.club.findFirst({
+      where: { joinCode, status: { not: "ARCHIVED" } },
+      select: { id: true, schoolId: true },
+    });
+    if (!club) throw new ValidationError("That club code is not recognised.");
+
+    const rows = await this.prisma.clubMembership.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        clubId: true,
+        status: true,
+        club: { select: { name: true } },
+      },
+    });
+    const held: HeldMembership[] = rows.map((row) => ({
+      clubId: row.clubId,
+      status: row.status,
+      clubName: row.club.name,
+    }));
+
+    const outcome = decideJoin(club.id, held);
+
+    switch (outcome.kind) {
+      case "refuse":
+        throw new ValidationError(
+          outcome.reason === "active-elsewhere"
+            ? `You are already a member of ${outcome.clubName}. Leave that club before joining another.`
+            : `You have already asked to join ${outcome.clubName}. Wait for that patron to answer.`,
+        );
+
+      case "already":
+        break;
+
+      case "create":
+        await this.prisma.clubMembership.create({
+          data: { clubId: club.id, userId, role: "PLAYER", status: "PENDING" },
+        });
+        break;
+
+      case "revive":
+        await this.prisma.clubMembership.update({
+          where: { clubId_userId: { clubId: club.id, userId } },
+          // `leftAt` is cleared: it dates a departure, and this person has not
+          // departed anything — they are asking to come back.
+          data: { status: "PENDING", leftAt: null, joinedAt: new Date() },
+        });
+        break;
+    }
+
+    // `User.schoolId` is legacy but must stay in sync with club affiliation
+    // (BUILD_PLAN §2). Filled only when the account carries none: an account
+    // that already names a school is not corrected by a club code, and an
+    // independent club has no school to copy.
+    if (club.schoolId) {
+      await this.prisma.user.updateMany({
+        where: { id: userId, schoolId: null },
+        data: { schoolId: club.schoolId },
+      });
+    }
+
+    const mine = await this.myMemberships(userId);
+    const membership = mine.find((row) => row.club.id === club.id);
+    if (!membership) {
+      // Unreachable: every branch above leaves a PENDING or ACTIVE row, and
+      // `myMemberships` returns both. Thrown rather than returned as null so a
+      // future edit that breaks the invariant fails loudly.
+      throw new ValidationError("The membership could not be read back.");
+    }
+    return membership;
   }
 
   async memberCount(clubId: string): Promise<number> {

@@ -1488,6 +1488,24 @@ export const typeDefs = `#graphql
     myMemberships: [MyMembership!]!
   }
 
+  extend type Mutation {
+    """
+    Spend a club's join code on the account already signed in, creating a
+    PENDING membership a patron then admits.
+
+    The counterpart to RegisterInput.joinCode, which was the only place a code
+    could be spent: that one covers the student who arrives holding it, and
+    left everybody else — somebody who installed the app before their school
+    signed up, a student whose club started this term — with an account and no
+    way to attach it to a club.
+
+    Entering the same code twice is not a second request: every path updates
+    the one membership row, so a patron never sees a stranger ask again.
+    Refused while the caller is active at another club, or waiting on one.
+    """
+    joinClubByCode(joinCode: String!): MyMembership!
+  }
+
   # ==========================================================================
   # THE LADDER — the Android app's tiered curriculum, attached to an account
   # ==========================================================================

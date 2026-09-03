@@ -3,6 +3,7 @@ import { userResolvers } from "./user.resolvers";
 import { gameResolvers } from "./game.resolvers";
 import { tournamentResolvers } from "./tournament.resolvers";
 import { learningResolvers } from "./learning.resolvers";
+import { ladderResolvers } from "./ladder.resolvers";
 import { schoolResolvers } from "./school.resolvers";
 import { chessProResolvers } from "./chessPro.resolvers";
 import { engineResolvers } from "./engine.resolvers";
@@ -40,6 +41,7 @@ export const resolvers = {
     ...gameResolvers.Query,
     ...tournamentResolvers.Query,
     ...learningResolvers.Query,
+    ...ladderResolvers.Query,
     ...schoolResolvers.Query,
     ...chessProResolvers.Query,
     ...engineResolvers.Query,
@@ -59,6 +61,7 @@ export const resolvers = {
     ...gameResolvers.Mutation,
     ...tournamentResolvers.Mutation,
     ...learningResolvers.Mutation,
+    ...ladderResolvers.Mutation,
     ...schoolResolvers.Mutation,
     ...challengeResolvers.Mutation,
     ...placementResolvers.Mutation,
@@ -82,4 +85,6 @@ export const resolvers = {
   Club: clubResolvers.Club,
   ClubHonour: clubResolvers.ClubHonour,
   Season: seasonResolvers.Season,
+  // `passed` is derived from `grade`, not stored — see ladder.resolvers.ts.
+  LadderExamResult: ladderResolvers.LadderExamResult,
 };

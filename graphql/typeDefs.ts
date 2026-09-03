@@ -1488,5 +1488,112 @@ export const typeDefs = `#graphql
     myMemberships: [MyMembership!]!
   }
 
+  # ==========================================================================
+  # THE LADDER — the Android app's tiered curriculum, attached to an account
+  # ==========================================================================
+  #
+  # Eleven Elo-banded tiers of lessons, drills, exams and diplomas, all of
+  # which the app runs offline against a database on the phone. This surface
+  # exists so a student who changes phone, or loses one, does not lose the
+  # ladder they climbed.
+  #
+  # Distinct from Course/CourseProgress above, which is the legacy site's
+  # per-course flag and stays as it is.
+  #
+  # PRIVATE. Every field here is about the caller and only the caller — there
+  # is no query that reads another student's progress, and adding one is a
+  # guardian-consent decision (BUILD_PLAN §4.3) rather than a convenience.
+
+  "Yusupov's bands, which the app's exams use verbatim."
+  enum LadderExamGrade {
+    "Under 60%. The chapter is repeated."
+    FAIL
+    "60-74%."
+    PASS
+    "75-89%."
+    GOOD
+    "90% and over."
+    EXCELLENT
+  }
+
+  type LadderLessonProgress {
+    "The app's own lesson slug. Opaque to the server: the curriculum ships in the app."
+    lessonId: ID!
+    tierId: ID!
+    "The earliest date any device claimed this lesson was finished."
+    completedAt: DateTime!
+  }
+
+  type LadderExamResult {
+    "Generated on the device. Two pushes of the same attempt are one sitting."
+    attemptId: ID!
+    examId: ID!
+    tierId: ID!
+    scorePoints: Int!
+    maxPoints: Int!
+    "Derived from the score by the server, never accepted from the client."
+    percent: Int!
+    "Derived from the percentage by the server, never accepted from the client."
+    grade: LadderExamGrade!
+    "Any grade but FAIL."
+    passed: Boolean!
+    startedAt: DateTime!
+    finishedAt: DateTime!
+  }
+
+  "A tier's seal, holding the best sitting that earned it."
+  type LadderDiploma {
+    tierId: ID!
+    percent: Int!
+    grade: LadderExamGrade!
+    earnedAt: DateTime!
+  }
+
+  type LadderProgress {
+    lessons: [LadderLessonProgress!]!
+    "Every sitting, oldest first. Append-only, so a re-sit is visible."
+    exams: [LadderExamResult!]!
+    diplomas: [LadderDiploma!]!
+  }
+
+  input LadderLessonInput {
+    lessonId: ID!
+    tierId: ID!
+    completedAt: DateTime!
+  }
+
+  "A sat exam. Carries no percentage and no grade — the server computes both."
+  input LadderExamInput {
+    "The device's own id for this sitting. Makes a retried push harmless."
+    attemptId: ID!
+    examId: ID!
+    tierId: ID!
+    scorePoints: Int!
+    maxPoints: Int!
+    startedAt: DateTime!
+    finishedAt: DateTime!
+  }
+
+  extend type Query {
+    "The caller's own ladder. Requires a token; there is no way to ask about anybody else."
+    myLadderProgress: LadderProgress!
+  }
+
+  extend type Mutation {
+    """
+    Records finished lessons and answers with the whole ladder, so a push and a
+    pull are one round trip. Idempotent: a lesson already recorded is left
+    alone unless the incoming claim is earlier.
+    """
+    recordLadderLessons(lessons: [LadderLessonInput!]!): LadderProgress!
+
+    """
+    Records one sitting, seals the tier when it earns that, and answers with
+    the whole ladder. Pushing the same attemptId twice is one sitting.
+    """
+    recordLadderExam(input: LadderExamInput!): LadderProgress!
+  }
+
+
 
 `;

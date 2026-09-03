@@ -2,6 +2,7 @@ import type { UserService } from "@/domains/user/user.service";
 import type { GameService } from "@/domains/game/game.service";
 import type { TournamentService } from "@/domains/tournament/tournament.service";
 import type { LearningService } from "@/domains/learning/learning.service";
+import type { LadderService } from "@/domains/learning/ladder.service";
 import type { InstitutionService } from "@/domains/institution/institution.service";
 import type { ChallengeService } from "@/domains/challenge/challenge.service";
 import type { PlacementService } from "@/domains/placement/placement.service";
@@ -21,6 +22,7 @@ import { UserService as UserServiceClass } from "@/domains/user/user.service";
 import { GameService as GameServiceClass } from "@/domains/game/game.service";
 import { TournamentService as TournamentServiceClass } from "@/domains/tournament/tournament.service";
 import { LearningService as LearningServiceClass } from "@/domains/learning/learning.service";
+import { LadderService as LadderServiceClass } from "@/domains/learning/ladder.service";
 import { InstitutionService as InstitutionServiceClass } from "@/domains/institution/institution.service";
 import { ChallengeService as ChallengeServiceClass } from "@/domains/challenge/challenge.service";
 import { PlacementService as PlacementServiceClass } from "@/domains/placement/placement.service";
@@ -76,6 +78,7 @@ export interface GraphQLContextWithServices {
     gameService: GameService;
     tournamentService: TournamentService;
     learningService: LearningService;
+    ladderService: LadderService;
     institutionService: InstitutionService;
     challengeService: ChallengeService;
     placementService: PlacementService;
@@ -133,6 +136,7 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       gameService: new GameServiceClass(prisma),
       tournamentService: new TournamentServiceClass(prisma),
       learningService: new LearningServiceClass(prisma),
+      ladderService: new LadderServiceClass(prisma),
       institutionService: new InstitutionServiceClass(prisma),
       challengeService: new ChallengeServiceClass(prisma),
       placementService: new PlacementServiceClass(prisma),

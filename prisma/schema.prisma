@@ -37,6 +37,9 @@ model User {
   challengesCreated      Challenge[]            @relation("ChallengeCreator")
   challengesReceived     Challenge[]            @relation("ChallengeOpponent")
   placementRuns          PlacementRun[]
+  ladderLessons          LadderLessonProgress[]
+  ladderExams            LadderExamResult[]
+  ladderDiplomas         LadderDiploma[]
 
   // Placement / auto-rating. New accounts seed at rating 100 with placementRequired = true;
   // a prompt recurs until placement completes once, then the computed rating overwrites this.
@@ -555,6 +558,142 @@ model CourseProgress {
   @@unique([userId, courseId])
   @@index([userId])
   @@map("course_progress")
+}
+
+// ============================================================================
+// THE LADDER — a student's progress through the Android app's tiered curriculum
+// ============================================================================
+//
+// Not `CourseProgress`, which is above and stays where it is. That model is the
+// legacy website's per-course completed/bookmarked flag, keyed on a `Course`
+// row, and it cannot carry what the app needs: the app's curriculum is eleven
+// Elo-banded tiers of individual lessons, drills, exams and diplomas, and its
+// unit of progress is a lesson, not a course.
+//
+// ── Why these three tables and not the app's six ─────────────────────────
+//
+// The phone keeps more than this. It also holds every drill attempt, the
+// spaced-repetition schedule and the Woodpecker cycle counters — thousands of
+// rows for an active student, all of it training exhaust that is only ever
+// read by the device that wrote it. Pushing that over a school's 3G to be
+// stored per user would cost real money and buy nothing a student would
+// notice.
+//
+// What a student WOULD notice is signing in on a new phone and finding their
+// ladder reset. That is these three: which lessons are finished, which exams
+// were sat, and which tiers are sealed. Attempts and review schedules stay on
+// the device and rebuild themselves through use.
+//
+// ── Everything here only ever accumulates ────────────────────────────────
+//
+// A lesson finished anywhere is finished; a sitting is a fact; a diploma is
+// the best sitting so far. No operation in this domain removes progress, which
+// is what lets two phones sync without a conflict protocol — see
+// `domains/learning/ladder.ts`, where every merge rule is a tested
+// function.
+//
+// ── Private, and only to its owner ───────────────────────────────────────
+//
+// A study record belongs to the student it is about, most of whom are minors.
+// There is no resolver that reads another person's progress and there must not
+// be one added casually: a patron seeing their students' work is a real want
+// and a guardian-consent decision (BUILD_PLAN §4.3), not a query to slip in.
+
+enum LadderExamGrade {
+  FAIL
+  PASS
+  GOOD
+  EXCELLENT
+
+  @@map("ladder_exam_grade")
+}
+
+/// One lesson, finished. The spine of the ladder: ~220 rows for a student who
+/// completes every tier, and the only thing the map needs to draw itself.
+model LadderLessonProgress {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The app's own lesson slug, e.g. `coord-guard`. Opaque here on purpose —
+  /// the curriculum ships in the app, and a server that validated these
+  /// against a list would need redeploying every time a tier gained a lesson.
+  lessonId    String
+  tierId      String
+
+  /// Kept at the EARLIEST claim. A lesson finished in March on a phone since
+  /// lost was not finished again in September on a new one.
+  completedAt DateTime
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@map("ladder_lesson_progress")
+}
+
+/// One sat exam. Append-only: a sitting is something that happened, and the
+/// history is what makes a re-sit visible.
+model LadderExamResult {
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Generated on the device, and the reason a retried push is not a second
+  /// sitting. The phone may be offline for a week and flush the same queue
+  /// twice; this is what makes that harmless.
+  attemptId   String
+
+  examId      String
+  tierId      String
+
+  /// What the student scored, and what the paper was worth. The only two
+  /// numbers taken on trust — an offline app is the sole witness to its own
+  /// exam — and everything below is derived from them by the server.
+  scorePoints Int
+  maxPoints   Int
+
+  /// Derived, never accepted: `percentFor` and `gradeFor` in
+  /// `domains/learning/ladder.ts`. Yusupov's bands, which the app's exams
+  /// use verbatim — under 60 fails, 60-74 passes, 75-89 good, 90+ excellent.
+  percent     Int
+  grade       LadderExamGrade
+
+  startedAt   DateTime
+  finishedAt  DateTime
+
+  /// Server clock, for support questions the two above cannot answer — such as
+  /// a sitting dated last March that arrived this morning.
+  recordedAt  DateTime        @default(now())
+
+  @@unique([userId, attemptId])
+  @@index([userId, tierId])
+  @@map("ladder_exam_results")
+}
+
+/// A tier's seal. One per tier per student, holding their best sitting.
+///
+/// Derived from a passing `LadderExamResult` in the same transaction rather
+/// than pushed by the client, so the seal and the sitting that earned it can
+/// never disagree. Kept as a row rather than computed on read because the
+/// product treats it as an award — it is dated, it is displayed, and it is
+/// printed at the club.
+model LadderDiploma {
+  id       String          @id @default(uuid())
+  userId   String
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tierId   String
+
+  /// The best percentage this student has passed the tier with. A later,
+  /// worse sitting never lowers it — see `improvesDiploma`.
+  percent  Int
+  grade    LadderExamGrade
+
+  /// When it was earned, not when it was last matched: a tie on percentage
+  /// keeps the earlier date.
+  earnedAt DateTime
+
+  @@unique([userId, tierId])
+  @@index([userId])
+  @@map("ladder_diplomas")
 }
 
 // ============================================================================

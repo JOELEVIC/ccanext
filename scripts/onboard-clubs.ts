@@ -11,12 +11,18 @@
  * a deterministic key, so a second run with a corrected spelling fixes the
  * spelling and changes nothing else.
  *
- * ── Why a script and not the admin console ────────────────────────────────
+ * ── Why a script, and what it is now for ──────────────────────────────────
  *
- * There is no mutation anywhere that creates a Club. The staff console for
- * this is Milestone 5, and the school list arrives before that does. Making
- * the academy wait for a UI to onboard the schools the UI exists to serve is
- * the wrong way round; this is the bridge, and it is deliberately boring.
+ * It was written because there was no mutation anywhere that created a Club:
+ * the school list arrived before the staff console did, and making the academy
+ * wait for a UI to onboard the schools that UI exists to serve is the wrong
+ * way round.
+ *
+ * The console now has `adminCreateClub`, so this is no longer the only door —
+ * it is the BULK door, for a spreadsheet of forty schools, and it stays for
+ * that. What it must not do is drift: the join-code alphabet is imported from
+ * `domains/club/joinCode.ts` rather than kept here, so a code minted by a
+ * script and one minted by the console are the same kind of thing.
  *
  * ── Dry run is the default, and it is not a formality ─────────────────────
  *
@@ -56,6 +62,7 @@
  */
 
 import { randomInt } from "node:crypto";
+import { makeJoinCode } from "../domains/club/joinCode";
 import { readFileSync } from "node:fs";
 
 import { ClubLevel, ClubStatus, PrismaClient, SchoolKind } from "@prisma/client";
@@ -103,17 +110,14 @@ function slugify(value: string): string {
  * matters — the code only ever creates a PENDING membership a patron must then
  * admit, so it is a convenience, not a credential.
  */
-const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
-function makeJoinCode(): string {
-  let code = "";
-  for (let i = 0; i < 6; i += 1) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
-  return code;
-}
+// The alphabet and the shape now live in `domains/club/joinCode.ts`, shared
+// with the console's own club creation. Two generators would eventually
+// disagree about which characters are safe, and being the same everywhere is
+// the entire point of the alphabet.
 
 async function uniqueJoinCode(taken: Set<string>): Promise<string> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    const code = makeJoinCode();
+    const code = makeJoinCode(randomInt);
     if (taken.has(code)) continue;
     if (await prisma.club.findUnique({ where: { joinCode: code }, select: { id: true } })) continue;
     taken.add(code);

@@ -32,6 +32,21 @@ async function adminCall<T>(fn: () => Promise<T>): Promise<T> {
 
 export const adminResolvers = {
   Query: {
+    /**
+     * Clubs, from the staff console.
+     *
+     * The one list in the product that carries `joinCode`, which is why it is
+     * here behind the admin token rather than anywhere a player can reach.
+     */
+    adminClubs: async (
+      _: unknown,
+      args: { search?: string; limit?: number; offset?: number },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return adminCall(() => context.services.clubAdminService.list(args));
+    },
+
     // Returns null (not an error) when unauthenticated, so the admin app can
     // probe session state on load.
     adminMe: async (_: unknown, __: unknown, context: GraphQLContextWithServices) => {
@@ -78,6 +93,50 @@ export const adminResolvers = {
   },
 
   Mutation: {
+    adminCreateClub: async (
+      _: unknown,
+      { input }: { input: Parameters<
+        GraphQLContextWithServices["services"]["clubAdminService"]["create"]
+      >[0] },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return adminCall(() => context.services.clubAdminService.create(input));
+    },
+
+    adminSetClubPatron: async (
+      _: unknown,
+      { clubId, username }: { clubId: string; username: string },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return adminCall(() =>
+        context.services.clubAdminService.setPatron(clubId, username)
+      );
+    },
+
+    adminRegenerateJoinCode: async (
+      _: unknown,
+      { clubId }: { clubId: string },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return adminCall(() =>
+        context.services.clubAdminService.regenerateJoinCode(clubId)
+      );
+    },
+
+    adminSetClubStatus: async (
+      _: unknown,
+      { clubId, status }: { clubId: string; status: "ONBOARDING" | "ACTIVE" | "DORMANT" | "ARCHIVED" },
+      context: GraphQLContextWithServices
+    ) => {
+      requireAdmin(context);
+      return adminCall(() =>
+        context.services.clubAdminService.setStatus(clubId, status)
+      );
+    },
+
     adminLogin: async (
       _: unknown,
       { email, password }: { email: string; password: string },

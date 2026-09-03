@@ -1488,6 +1488,87 @@ export const typeDefs = `#graphql
     myMemberships: [MyMembership!]!
   }
 
+  # ==========================================================================
+  # CLUBS, FROM THE STAFF CONSOLE
+  # ==========================================================================
+  #
+  # Until this existed a club could only be created by running
+  # scripts/onboard-clubs.ts from a developer's machine — everything
+  # downstream of a club existing was shipped, and the first step was a
+  # terminal.
+  #
+  # Staff-only, and that is a decision rather than a shortcut: a club is an
+  # institution whose members are children, its name appears in a public
+  # directory, and it plays in a league whose table has to mean something.
+  # The enquiry funnel is the public door.
+  #
+  # AdminClub is the ONE list type in this schema carrying joinCode, reachable
+  # only with the separately-signed admin token.
+
+  type AdminClub {
+    id: ID!
+    slug: String!
+    name: String!
+    shortName: String!
+    region: String!
+    level: ClubLevel!
+    status: ClubStatus!
+    schoolName: String
+    "Secret. Never on a public type — see BUILD_PLAN 3.3 invariant 6."
+    joinCode: String!
+    memberCount: Int!
+    "Requests waiting on a patron."
+    pendingCount: Int!
+    "Named, not counted: a club with none is inert and a zero is easy to read past."
+    patronNames: [String!]!
+    createdAt: DateTime!
+  }
+
+  input AdminCreateClubInput {
+    name: String!
+    "2-4 characters. Drives the crest."
+    shortName: String!
+    "A canonical region key, e.g. SOUTH_WEST."
+    region: String!
+    "Null for an independent club — one with no host institution."
+    schoolId: ID
+    level: ClubLevel
+    """
+    The teacher who will run it, by username or email.
+
+    A club created without one is inert: a join request can only be admitted
+    by a patron of that club, so an empty club's first request can never be
+    answered by anybody. Set it here or with adminSetClubPatron.
+    """
+    patronUsername: String
+  }
+
+  extend type Query {
+    "Every club, newest first, with its join code and its waiting count."
+    adminClubs(search: String, limit: Int, offset: Int): [AdminClub!]!
+  }
+
+  extend type Mutation {
+    "Create a club. It starts ONBOARDING — appearing in the public directory is a separate decision."
+    adminCreateClub(input: AdminCreateClubInput!): AdminClub!
+
+    """
+    Install the club's patron: an ACTIVE PATRON membership, made without
+    anybody approving it, because for the first one there is nobody to ask.
+    Does not demote an existing patron; a club may have several.
+    """
+    adminSetClubPatron(clubId: ID!, username: String!): AdminClub!
+
+    """
+    Mint a new join code, retiring the old one — for the day a code reaches a
+    group chat it should not have. Members are unaffected: the code is how you
+    ask to join, not what proves you are in.
+    """
+    adminRegenerateJoinCode(clubId: ID!): AdminClub!
+
+    adminSetClubStatus(clubId: ID!, status: ClubStatus!): AdminClub!
+  }
+
   extend type Mutation {
     """
     Spend a club's join code on the account already signed in, creating a

@@ -10,6 +10,7 @@ import type { AdminService } from "@/domains/admin/admin.service";
 import type { ActivityService } from "@/domains/activity/activity.service";
 import type { TournamentRoundService } from "@/domains/tournament/round.service";
 import type { ClubService } from "@/domains/club/club.service";
+import type { ClubAdminService } from "@/domains/club/admin.service";
 import type { SeasonService } from "@/domains/season/season.service";
 import type { FixtureService } from "@/domains/fixture/fixture.service";
 import type { EnquiryService } from "@/domains/enquiry/enquiry.service";
@@ -30,6 +31,7 @@ import { AdminService as AdminServiceClass } from "@/domains/admin/admin.service
 import { ActivityService as ActivityServiceClass } from "@/domains/activity/activity.service";
 import { TournamentRoundService as TournamentRoundServiceClass } from "@/domains/tournament/round.service";
 import { ClubService as ClubServiceClass } from "@/domains/club/club.service";
+import { ClubAdminService as ClubAdminServiceClass } from "@/domains/club/admin.service";
 import { SeasonService as SeasonServiceClass } from "@/domains/season/season.service";
 import { FixtureService as FixtureServiceClass } from "@/domains/fixture/fixture.service";
 import { EnquiryService as EnquiryServiceClass } from "@/domains/enquiry/enquiry.service";
@@ -86,6 +88,7 @@ export interface GraphQLContextWithServices {
     activityService: ActivityService;
     tournamentRoundService: TournamentRoundService;
     clubService: ClubService;
+    clubAdminService: ClubAdminService;
     seasonService: SeasonService;
     fixtureService: FixtureService;
     enquiryService: EnquiryService;
@@ -144,6 +147,7 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       activityService: new ActivityServiceClass(prisma),
       tournamentRoundService: new TournamentRoundServiceClass(prisma),
       clubService: new ClubServiceClass(prisma),
+      clubAdminService: new ClubAdminServiceClass(prisma),
       seasonService: new SeasonServiceClass(prisma),
       fixtureService: new FixtureServiceClass(prisma),
       enquiryService: new EnquiryServiceClass(prisma),

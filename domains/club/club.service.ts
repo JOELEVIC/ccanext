@@ -337,7 +337,14 @@ export class ClubService {
       clubName: row.club.name,
     }));
 
-    const outcome = decideJoin(club.id, held);
+    // A club with no ACTIVE patron is one the enquiry funnel made and nobody
+    // has claimed. The first code-holder becomes its patron — see the `claim`
+    // outcome in `joinByCode.ts`.
+    const patronCount = await this.prisma.clubMembership.count({
+      where: { clubId: club.id, role: "PATRON", status: "ACTIVE" },
+    });
+
+    const outcome = decideJoin(club.id, held, patronCount === 0);
 
     switch (outcome.kind) {
       case "refuse":
@@ -353,6 +360,14 @@ export class ClubService {
       case "create":
         await this.prisma.clubMembership.create({
           data: { clubId: club.id, userId, role: "PLAYER", status: "PENDING" },
+        });
+        break;
+
+      case "claim":
+        // PATRON and ACTIVE in one step, deliberately: there is nobody to
+        // admit them, which is the whole reason this branch exists.
+        await this.prisma.clubMembership.create({
+          data: { clubId: club.id, userId, role: "PATRON", status: "ACTIVE" },
         });
         break;
 

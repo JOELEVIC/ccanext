@@ -48,6 +48,17 @@ export type JoinOutcome =
   | { kind: "already"; status: "PENDING" | "ACTIVE" }
   /** No row for this club yet. */
   | { kind: "create" }
+  /**
+   * No row here, and the club has NO PATRON — so this person becomes one,
+   * ACTIVE, rather than a PLAYER waiting to be admitted.
+   *
+   * A club created from the public enquiry form has no patron: the form is
+   * anonymous, and a club whose join requests nobody can admit is inert. The
+   * join code goes to the enquirer alone, so the first person through the door
+   * is the person who asked for the club. It can only happen once — after it
+   * the club has a patron and everybody else is an ordinary PLAYER.
+   */
+  | { kind: "claim" }
   /** A LEFT or REMOVED row for this club, put back to PENDING. */
   | { kind: "revive" }
   /** Refused, with the club that blocks it. */
@@ -72,6 +83,8 @@ export type JoinOutcome =
 export function decideJoin(
   targetClubId: string,
   held: readonly HeldMembership[],
+  /** True when the club has no ACTIVE patron. See the `claim` outcome. */
+  clubHasNoPatron = false,
 ): JoinOutcome {
   const here = held.find((m) => m.clubId === targetClubId);
   if (here?.status === "ACTIVE" || here?.status === "PENDING") {
@@ -94,5 +107,11 @@ export function decideJoin(
 
   // LEFT or REMOVED here: a declined student may be admitted later, and a
   // member who left may come back. Both are the same row put back to PENDING.
-  return here ? { kind: "revive" } : { kind: "create" };
+  if (here) return { kind: "revive" };
+
+  // Checked last, and only for somebody with no row here: claiming is what
+  // happens instead of `create`, never instead of a refusal. A person already
+  // ACTIVE at another club cannot claim this one — the one-active-membership
+  // index would refuse it anyway, and it is refused above with a name in it.
+  return clubHasNoPatron ? { kind: "claim" } : { kind: "create" };
 }

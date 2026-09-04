@@ -174,7 +174,7 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       clubAdminService: new ClubAdminServiceClass(prisma),
       seasonService: new SeasonServiceClass(prisma),
       fixtureService: new FixtureServiceClass(prisma),
-      enquiryService: new EnquiryServiceClass(prisma),
+      enquiryService: new EnquiryServiceClass(prisma, platformSettings),
       clubManagementService: clubManagement,
       matchDayService: new MatchDayServiceClass(prisma, clubManagement),
       friendService: new FriendServiceClass(prisma),

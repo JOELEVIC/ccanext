@@ -1348,6 +1348,39 @@ export const typeDefs = `#graphql
     id: ID
     code: String!
     message: String!
+    """
+    The club the enquiry created, when it created one. Null whenever it did not
+    — a duplicate club name, a rate limit, a validation refusal. The enquiry is
+    the record; the club is a bonus and never a precondition of the form
+    succeeding.
+    """
+    club: ProvisionedClub
+  }
+
+  """
+  A club just created from a public enquiry, returned ONCE to the person who
+  submitted the form.
+
+  This is the only type in the schema that carries a join code, and it exists
+  precisely so it can. §3.3 invariant 6 keeps joinCode off every public type
+  because a code is an admission credential — but the person who just asked for
+  this club, in this response, is the one party who must have it: a club made
+  from an anonymous form has no patron, and entering this code is what makes
+  them one. It is returned in the mutation payload and is not readable back
+  from any query.
+  """
+  type ProvisionedClub {
+    id: ID!
+    slug: String!
+    name: String!
+    "The admission code. Show it once; it cannot be fetched again."
+    joinCode: String!
+    """
+    True when the platform requires staff approval for new clubs. The club
+    exists but is PENDING_REVIEW, so it is not in the directory and the code
+    opens nothing until it is approved.
+    """
+    awaitingApproval: Boolean!
   }
 
   type SchoolEnquiry {

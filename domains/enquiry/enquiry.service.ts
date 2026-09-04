@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
 import type { PrismaClient } from "@prisma/client";
 import { ClubKind, ClubLevel, EnquiryStatus } from "@prisma/client";
+import { provisionClubFromEnquiry, type ProvisionedClub } from "@/domains/club/enquiryProvisioning";
+import type { PlatformSettingService } from "@/domains/platform/platformSetting.service";
 import { EnquiryRepository } from "./enquiry.repository";
 import { normalizeRegion } from "@/domains/region/regions";
 
@@ -43,6 +45,12 @@ export interface SchoolEnquiryResult {
   ok: boolean;
   id: string | null;
   code: EnquiryResultCode;
+  /**
+   * The club this enquiry created, when it created one. Null whenever it did
+   * not — a duplicate name, a validation failure, a rate limit. The enquiry is
+   * the record; the club is a bonus that must never cost somebody their form.
+   */
+  club?: ProvisionedClub | null;
   message: string;
 }
 
@@ -62,6 +70,14 @@ export interface SchoolEnquiryInput {
   /** Honeypot. A real client never fills this in. */
   website?: string | null;
 }
+
+/**
+ * Said when the enquiry also produced a club they can walk into now. The
+ * enquiry still stands and staff still see it — this is the extra thing that
+ * happened, not a replacement for the review.
+ */
+const CREATED =
+  "Your club is live. Use the join code below to open it — the first person to enter it becomes the club's patron.";
 
 const THANKS =
   "Thank you — your enquiry has reached the academy. Someone will be in touch within three working days.";
@@ -89,7 +105,10 @@ function digest(value: string): string {
 export class EnquiryService {
   private repo: EnquiryRepository;
 
-  constructor(private prisma: PrismaClient) {
+  constructor(
+    private prisma: PrismaClient,
+    private settings: PlatformSettingService,
+  ) {
     this.repo = new EnquiryRepository(prisma);
   }
 
@@ -198,7 +217,34 @@ export class EnquiryService {
       };
     }
 
-    return { ok: true, id: created.id, code: "OK", message: THANKS };
+    /**
+     * The club, if we can make one.
+     *
+     * Deliberately after the enquiry row and deliberately swallowed: a
+     * duplicate name or a database hiccup must not cost somebody the form they
+     * just filled in on a phone. When it fails the enquiry stands exactly as
+     * it did before any of this existed, and a reviewer picks it up.
+     */
+    let club: ProvisionedClub | null = null;
+    try {
+      club = await provisionClubFromEnquiry(this.prisma, this.settings, {
+        name: schoolName,
+        region,
+      });
+    } catch (cause) {
+      console.error(
+        "[enquiry] club provisioning failed:",
+        cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause),
+      );
+    }
+
+    return {
+      ok: true,
+      id: created.id,
+      code: "OK",
+      message: club && !club.awaitingApproval ? CREATED : THANKS,
+      club,
+    };
   }
 
   /** Staff-only. The resolver gates on the admin token before calling this. */

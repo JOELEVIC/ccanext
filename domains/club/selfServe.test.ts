@@ -60,10 +60,10 @@ const INPUT = {
 };
 
 describe("the approval switch", () => {
-  it("lands PENDING_REVIEW when nobody has configured anything", async () => {
-    // The DEFAULT is the assertion. An unwritten key must read as "approval
-    // required" — the safe position — so an empty settings table is not an
-    // open door.
+  it("lands ONBOARDING when nobody has configured anything", async () => {
+    // The DEFAULT is the assertion. An unwritten key must read as "create it",
+    // because a review queue nobody is reading is not moderation — it is a
+    // teacher waiting on a person who is not coming.
     const s = store();
     const service = new ClubSelfServeService(
       s.prisma,
@@ -71,22 +71,25 @@ describe("the approval switch", () => {
     );
     const { requiresApproval } = await service.create("u1", INPUT);
 
-    expect(requiresApproval).toBe(true);
-    expect(s.clubs[0].status).toBe("PENDING_REVIEW");
+    expect(requiresApproval).toBe(false);
+    // ONBOARDING is in PUBLIC_CLUB_STATUSES, so the club is in the directory,
+    // reachable by slug and its join code works — which is what makes "here is
+    // your club" a link the creator can actually follow.
+    expect(s.clubs[0].status).toBe("ONBOARDING");
   });
 
-  it("lands ONBOARDING once staff turn approval off", async () => {
-    const s = store({ requiresApproval: false });
+  it("lands PENDING_REVIEW once staff turn approval back on", async () => {
+    const s = store({ requiresApproval: true });
     const service = new ClubSelfServeService(
       s.prisma,
       new PlatformSettingService(s.prisma),
     );
     const { requiresApproval } = await service.create("u1", INPUT);
 
-    expect(requiresApproval).toBe(false);
-    // ONBOARDING, not ACTIVE: appearing in the public directory stays a
-    // separate decision, exactly as it is for a club staff made.
-    expect(s.clubs[0].status).toBe("ONBOARDING");
+    expect(requiresApproval).toBe(true);
+    // Absent from PUBLIC_CLUB_STATUSES: not in the directory, not reachable by
+    // slug, join code finds nothing. A proposal, not a club.
+    expect(s.clubs[0].status).toBe("PENDING_REVIEW");
   });
 });
 
@@ -186,6 +189,6 @@ describe("the platform setting itself", () => {
       },
     } as unknown as PrismaClient;
     const settings = new PlatformSettingService(prisma);
-    expect(await settings.get("club.creation.requiresApproval")).toBe(true);
+    expect(await settings.get("club.creation.requiresApproval")).toBe(false);
   });
 });

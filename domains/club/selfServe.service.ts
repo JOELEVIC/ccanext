@@ -34,9 +34,12 @@ import {
  * roster, sessions, fixtures, the app — works exactly as it does for a club
  * staff made themselves.
  *
- * With the switch off, creation lands straight in ONBOARDING. That is a
- * decision somebody takes on a Tuesday, not a state the platform drifts into:
- * the default in `DEFAULTS` is that approval is required.
+ * The switch is OFF by default now, so creation lands straight in ONBOARDING
+ * and the club is live the moment it is made. `PENDING_REVIEW` and everything
+ * that reads it stay exactly as they are — turning approval back on is one
+ * setting, and it is worth turning on the day somebody is actually reading the
+ * queue. See the note on the key in `platformSetting.service.ts` for what that
+ * trade gives up.
  *
  * ── The creator becomes the patron, and that is the point ────────────────
  *

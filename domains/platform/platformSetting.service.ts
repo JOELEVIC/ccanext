@@ -34,13 +34,30 @@ export const DEFAULTS = {
    * Whether a club created by somebody who is not staff has to be approved
    * before it exists.
    *
-   * TRUE, and the default matters more than the value. A club is an
-   * institution whose members are children and whose name appears in a public
-   * directory beside real schools; the safe position is that a human looks
-   * first. Staff can turn it off, and turning it off is a decision somebody
-   * takes rather than a state the platform drifts into.
+   * FALSE. A club created here goes live immediately, in ONBOARDING, with its
+   * creator installed as patron — in the directory, reachable by slug, join
+   * code working.
+   *
+   * This was TRUE, and the reasoning was sound: a club is an institution whose
+   * members are children and whose name sits in a public directory beside real
+   * schools, so a human should look first. What changed is not the risk but who
+   * carries the cost of it. With nobody watching a review queue, "a human looks
+   * first" is not moderation — it is a teacher waiting on a person who is not
+   * coming, which is the failure mode `selfServe.service.ts` was written to end
+   * and which the queue quietly reintroduced.
+   *
+   * The safeguards that remain are real ones rather than a promise to look:
+   * creating a club needs an ACCOUNT, one active membership per person blocks a
+   * second club, a duplicate name is refused, and a self-serve club is always
+   * INDEPENDENT — it cannot claim a school, because that claim is what the
+   * enquiry funnel exists to verify.
+   *
+   * What is genuinely given up: a junk club can reach the public directory
+   * before anybody sees it. The answer to that is `PENDING_REVIEW` still
+   * existing and this switch still being a switch — turn it back on the day
+   * somebody is actually reading the queue.
    */
-  "club.creation.requiresApproval": true,
+  "club.creation.requiresApproval": false,
 } as const;
 
 export type PlatformSettingKey = keyof typeof DEFAULTS;

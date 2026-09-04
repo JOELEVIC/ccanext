@@ -254,7 +254,13 @@ enum FriendshipStatus {
 model PlatformSetting {
   key       String   @id
   value     Json
-  updatedAt DateTime @updatedAt
+  /// `@default(now())` as well as `@updatedAt`, so the column Prisma expects
+  /// matches the one the SQL created. Prisma supplies the value on every
+  /// write and never relies on the default; declaring it here is what keeps
+  /// `migrate diff` empty, and a schema that silently disagrees with the
+  /// database is how a later migration proposes to "fix" something nobody
+  /// meant to change.
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@map("platform_settings")
 }

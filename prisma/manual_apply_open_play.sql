@@ -55,9 +55,12 @@ ALTER TABLE "profiles"
   ADD COLUMN IF NOT EXISTS "gamesPublic"      BOOLEAN NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS "phone"            TEXT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "profiles_phone_key"
-  ON "profiles" ("phone")
-  WHERE "phone" IS NOT NULL;
+-- Plain, not partial. A partial index `WHERE "phone" IS NOT NULL` behaves
+-- identically — Postgres already treats NULLs as distinct in a unique index,
+-- so several rows may hold NULL either way — and Prisma cannot express one,
+-- which makes `migrate diff` report it as drift and propose dropping it. An
+-- index the schema does not know about is an index a later migration removes.
+CREATE UNIQUE INDEX IF NOT EXISTS "profiles_phone_key" ON "profiles" ("phone");
 
 -- ── 2. The club's switches ────────────────────────────────────────────────
 --
@@ -177,6 +180,22 @@ CREATE TABLE IF NOT EXISTS "platform_settings" (
 );
 
 COMMIT;
+
+-- ===========================================================================
+-- CORRECTION — only needed on a database that ran an earlier copy of this file
+-- ===========================================================================
+--
+-- The first version of the block above created the phone index as PARTIAL.
+-- It works exactly the same way, and Prisma cannot express it, so
+-- `prisma migrate diff` reports it as drift and proposes dropping it. Left
+-- alone it is harmless; the cost is that the drift check stops being a useful
+-- signal, because there is always one line in it.
+--
+-- Safe to run on a database that never had the partial index: the DROP is
+-- conditional and the CREATE is the same statement as above.
+
+DROP INDEX IF EXISTS "profiles_phone_key";
+CREATE UNIQUE INDEX IF NOT EXISTS "profiles_phone_key" ON "profiles" ("phone");
 
 -- ===========================================================================
 -- VERIFY — run this after, and expect the counts in the comments.

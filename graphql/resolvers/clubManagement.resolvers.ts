@@ -35,6 +35,31 @@ function requireMember(ctx: GraphQLContextWithServices) {
   return ctx.user.userId;
 }
 
+/**
+ * The club as its patron sees it, re-read after a write.
+ *
+ * Re-read rather than returned from the service: `updateClub` takes a partial
+ * input and the answer has to be the whole club, and a service that returned
+ * one would be assembling a GraphQL shape.
+ */
+async function managedDetail(ctx: GraphQLContextWithServices, clubId: string) {
+  const club = await ctx.prisma.club.findUniqueOrThrow({
+    where: { id: clubId },
+    select: {
+      id: true, slug: true, name: true, shortName: true, region: true,
+      level: true, status: true, joinCode: true, crestJson: true,
+      isPrivate: true, poolOptOut: true,
+      school: { select: { id: true, name: true } },
+    },
+  });
+  return {
+    ...club,
+    crest: crestOf(club),
+    schoolId: club.school?.id ?? null,
+    schoolName: club.school?.name ?? null,
+  };
+}
+
 /** `crestJson` is stored as JSON; the SDL exposes it as a typed `Crest`. */
 function crestOf(row: { crestJson?: unknown }) {
   return (row.crestJson as { shield: string; band: string; charge: string } | null) ?? null;
@@ -171,6 +196,66 @@ export const clubManagementResolvers = {
       { joinCode }: { joinCode: string },
       ctx: GraphQLContextWithServices
     ) => ctx.services.clubService.joinByCode(requireMember(ctx), joinCode),
+
+    /**
+     * Start a club.
+     *
+     * `requireMember` and not `requireUser`: somebody creating their first
+     * club is not managing one yet, and "Sign in to manage a club" is the
+     * wrong sentence to meet them with.
+     */
+    createClub: async (
+      _: unknown,
+      {
+        input,
+      }: {
+        input: {
+          name: string;
+          shortName: string;
+          region: string;
+          level?: MembershipRoleValue | null;
+        };
+      },
+      ctx: GraphQLContextWithServices
+    ) => {
+      const { clubId, requiresApproval } =
+        await ctx.services.clubSelfServeService.create(
+          requireMember(ctx),
+          input as never
+        );
+      const club = await ctx.prisma.club.findUniqueOrThrow({
+        where: { id: clubId },
+      });
+      return {
+        club: { ...club, crest: crestOf(club) },
+        awaitingApproval: requiresApproval,
+      };
+    },
+
+    updateClub: async (
+      _: unknown,
+      { clubId, input }: { clubId: string; input: Record<string, unknown> },
+      ctx: GraphQLContextWithServices
+    ) => {
+      await ctx.services.clubManagementService.updateClub(
+        requireUser(ctx),
+        clubId,
+        input as never
+      );
+      return managedDetail(ctx, clubId);
+    },
+
+    regenerateJoinCode: async (
+      _: unknown,
+      { clubId }: { clubId: string },
+      ctx: GraphQLContextWithServices
+    ) => {
+      await ctx.services.clubManagementService.regenerateJoinCode(
+        requireUser(ctx),
+        clubId
+      );
+      return managedDetail(ctx, clubId);
+    },
 
     decideMembership: (
       _: unknown,

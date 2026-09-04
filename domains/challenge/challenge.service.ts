@@ -209,23 +209,60 @@ export class ChallengeService {
       where: {
         status: ChallengeStatus.OPEN,
         OR: [{ opponentId: userId }, { creatorId: userId }],
+        // Expired rows used to come back and sit in a list nobody could act
+        // on. `acceptChallenge` only flips a row to EXPIRED when somebody
+        // tries to take it, so an invitation nobody opened stays OPEN for
+        // ever as far as this query is concerned — and a dead invitation on
+        // screen is worse than an empty list, because somebody taps it.
+        //
+        // `NOT lte` rather than `gt`: a null `expiresAt` means "never", and
+        // `gt` would silently drop every row written before the TTL existed.
+        NOT: { expiresAt: { lte: new Date() } },
       },
       include: this.include,
       orderBy: { createdAt: "desc" },
     });
   }
 
-  /** Public open invites (no named opponent) anyone can accept — excluding my own. */
-  async openChallenges(userId?: string) {
+  /**
+   * The seek pool: open invites with no named opponent, which anybody may
+   * take.
+   *
+   * ── This is the whole of matchmaking ─────────────────────────────────────
+   *
+   * There is no queue, no matcher and no new model. "Find me a game" is: take
+   * the oldest open invite at this cadence, or post one and be taken. Two
+   * people who both post are matched by whichever of them looks second, which
+   * is the same answer a queue would reach and needs nothing to run between
+   * requests.
+   *
+   * Oldest first — `asc`, not the `desc` this used to return. A pool read
+   * newest-first pairs the two most recent seekers and leaves whoever has
+   * waited longest waiting longer, which is exactly backwards.
+   *
+   * ── Who is in it ─────────────────────────────────────────────────────────
+   *
+   * Filtering is by CREATOR, not by viewer: somebody who has switched
+   * themselves out of the open pool should not have their own invitations
+   * offered to strangers either. `openToChallenges` defaults true and
+   * `Club.poolOptOut` defaults false, so the ordinary case adds no rows to
+   * the join and the ordinary player is in the pool.
+   */
+  async openChallenges(userId?: string, timeControl?: string | null) {
     return this.prisma.challenge.findMany({
       where: {
         status: ChallengeStatus.OPEN,
         opponentId: null,
         ...(userId ? { creatorId: { not: userId } } : {}),
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        ...(timeControl ? { timeControl } : {}),
+        NOT: { expiresAt: { lte: new Date() } },
+        creator: {
+          profile: { is: { openToChallenges: true } },
+          memberships: { none: { status: "ACTIVE", club: { poolOptOut: true } } },
+        },
       },
       include: this.include,
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: "asc" },
       take: 50,
     });
   }

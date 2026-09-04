@@ -2,7 +2,12 @@ import { randomInt } from "node:crypto";
 import type { ClubLevel, ClubStatus, PrismaClient } from "@prisma/client";
 import { NotFoundError, ValidationError } from "@/utils/types";
 import { normalizeRegion } from "@/domains/region/regions";
-import { makeJoinCode, nextFreeSlug, slugify } from "./joinCode";
+import {
+  activeMembershipBlocker,
+  installPatron,
+  uniqueJoinCode,
+  uniqueSlug,
+} from "./provisioning";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -15,12 +20,26 @@ import { makeJoinCode, nextFreeSlug, slugify } from "./joinCode";
  * code, the app — and the first step was a script. A school that filled in the
  * enquiry form waited for somebody to open a terminal.
  *
- * This is that step, as an operation. It stays in the STAFF console rather
- * than becoming self-serve on the public site, and that is a decision rather
- * than a shortcut: a club here is an institution whose members are children,
- * its name appears in a public directory, and it plays in a league whose table
- * has to mean something. Anyone-can-create is a moderation problem the
- * enquiry funnel already exists to avoid.
+ * This is that step, as an operation.
+ *
+ * ── It used to be the only door, and is not any more ─────────────────────
+ *
+ * This file argued that creation should stay in the STAFF console: a club is
+ * an institution whose members are children, its name appears in a public
+ * directory, and it plays in a league whose table has to mean something.
+ * Anyone-can-create was called a moderation problem the enquiry funnel
+ * already existed to avoid.
+ *
+ * The moderation problem was real and the conclusion was too strong. A school
+ * that filled in the form still waited on a person, and the wait was the
+ * failure mode nobody saw. So creation is self-serve now
+ * (`club/selfServe.service.ts`) and the moderation is a REVIEW rather than a
+ * gate on the door: a club made by somebody who is not staff lands in
+ * PENDING_REVIEW, which is invisible and inert, until staff approve it — or
+ * lands ready to go, if staff have turned that requirement off.
+ *
+ * This service is still the staff door, and it still creates ONBOARDING
+ * directly. Staff making a club IS the approval.
  *
  * ── The deadlock this had to solve ───────────────────────────────────────
  *
@@ -140,11 +159,8 @@ export class ClubAdminService {
       ? await this.findPatron(input.patronUsername.trim())
       : null;
 
-    const taken = new Set(
-      (await this.prisma.club.findMany({ select: { slug: true } })).map((c) => c.slug),
-    );
-    const slug = nextFreeSlug(slugify(name), taken);
-    const joinCode = await this.uniqueJoinCode();
+    const slug = await uniqueSlug(this.prisma, name);
+    const joinCode = await uniqueJoinCode(this.prisma);
 
     const club = await this.prisma.club.create({
       data: {
@@ -162,7 +178,7 @@ export class ClubAdminService {
       select: { id: true },
     });
 
-    if (patron) await this.installPatron(club.id, patron.id);
+    if (patron) await installPatron(this.prisma, club.id, patron.id);
 
     return this.one(club.id);
   }
@@ -177,7 +193,7 @@ export class ClubAdminService {
   async setPatron(clubId: string, username: string) {
     await this.requireClub(clubId);
     const patron = await this.findPatron(username.trim());
-    await this.installPatron(clubId, patron.id);
+    await installPatron(this.prisma, clubId, patron.id);
     return this.one(clubId);
   }
 
@@ -192,7 +208,7 @@ export class ClubAdminService {
     await this.requireClub(clubId);
     await this.prisma.club.update({
       where: { id: clubId },
-      data: { joinCode: await this.uniqueJoinCode() },
+      data: { joinCode: await uniqueJoinCode(this.prisma) },
     });
     return this.one(clubId);
   }
@@ -230,7 +246,9 @@ export class ClubAdminService {
    *
    * One ACTIVE membership per user is a partial unique index, so a teacher who
    * already runs another club cannot be installed here — and being told that
-   * now is better than a constraint error with no name in it.
+   * now is better than a constraint error with no name in it. The same rule,
+   * asked of the caller rather than of a named account, is
+   * `activeMembershipBlocker` in `provisioning.ts`.
    */
   private async findPatron(username: string) {
     const user = await this.prisma.user.findFirst({
@@ -253,25 +271,4 @@ export class ClubAdminService {
     return user;
   }
 
-  private async installPatron(clubId: string, userId: string) {
-    await this.prisma.clubMembership.upsert({
-      where: { clubId_userId: { clubId, userId } },
-      create: { clubId, userId, role: "PATRON", status: "ACTIVE" },
-      // ACTIVE and PATRON in one step. This is the one membership in the
-      // system that no patron approves, because there is nobody to approve it.
-      update: { role: "PATRON", status: "ACTIVE", leftAt: null },
-    });
-  }
-
-  private async uniqueJoinCode(): Promise<string> {
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const code = makeJoinCode(randomInt);
-      const clash = await this.prisma.club.findUnique({
-        where: { joinCode: code },
-        select: { id: true },
-      });
-      if (!clash) return code;
-    }
-    throw new Error("Could not find an unused join code in 50 attempts");
-  }
 }

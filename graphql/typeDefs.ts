@@ -87,6 +87,17 @@ export const typeDefs = `#graphql
     avatarUrl: String
     followerCount: Int!
     friendCount: Int!
+    """
+    Whether this player may be drawn from the open pool by somebody who did not
+    name them. Default true. Visible only to the owner and staff — whether
+    somebody is open to a game is their business, not a browsable attribute.
+
+    This gates WHO MAY BE CHALLENGED and has nothing to do with §4.3, which
+    gates whose name is published and is unaffected either way.
+    """
+    openToChallenges: Boolean
+    "Whether finished games appear on this player's record. Owner and staff only."
+    gamesPublic: Boolean
     ratingTrend: [Int!]!
     xp: Int!
     level: Int!
@@ -313,6 +324,22 @@ export const typeDefs = `#graphql
     password: String!
   }
 
+  """
+  The switches a player owns. Every field optional: a screen saving one must
+  not send the others back as it last read them.
+  """
+  input MySettingsInput {
+    openToChallenges: Boolean
+    gamesPublic: Boolean
+    """
+    A LOOKUP KEY, never an output. Stored normalised so a number typed any of
+    the ways Cameroonian numbers are written finds the same account; matched
+    only on the whole value, so no query can walk the space of numbers. No
+    resolver returns it — not to the owner, not to staff. Null clears it.
+    """
+    phone: String
+  }
+
   input UpdateProfileInput {
     firstName: String
     lastName: String
@@ -389,8 +416,41 @@ export const typeDefs = `#graphql
     challenge(id: ID!): Challenge
     "Open challenges I sent or that are addressed to me."
     myChallenges: [Challenge!]!
-    "Public open invites anyone can accept (excludes my own)."
-    openChallenges: [Challenge!]!
+    """
+    Players I can invite directly, and requests waiting on an answer.
+
+    Both consent-reduced: being somebody's friend is not consent to publish
+    their name, and a non-consented minor is "Brenda A." to their friends too.
+    """
+    myFriends: [PublicPlayer!]!
+    myFriendRequests: [Friendship!]!
+
+    """
+    Find one person you already know, by username, email or phone.
+
+    Username matches by prefix, because a username is public and on every
+    roster. Email and phone match the WHOLE value or not at all — a prefix
+    search over either would be an oracle for enumerating a school's worth of
+    children's contact details. Neither is ever returned.
+    """
+    findPlayer(query: String!): [PublicPlayer!]!
+
+    """
+    Players open to a game from somebody who has not met them, for anyone who
+    would rather pick a face than take whatever the seek queue offers.
+    """
+    openPool(limit: Int): [PublicPlayer!]!
+
+    """
+    The seek pool: open invites nobody has named an opponent on, oldest first,
+    excluding my own. Pass a cadence to see only the games you would actually
+    take.
+
+    This IS matchmaking. "Find me a game" is: accept the oldest of these, or
+    post one and be accepted. Creators who have switched themselves out of the
+    open pool, or whose club has, are not listed.
+    """
+    openChallenges(timeControl: String): [Challenge!]!
 
     tournament(id: ID!): Tournament
     schoolTournaments(schoolId: ID!): [Tournament!]!
@@ -431,6 +491,29 @@ export const typeDefs = `#graphql
     "Finalize a live game decided on the gameplay server: persist result/moves + apply Glicko-2 ratings. A null result aborts (voids) the game. Idempotent."
     recordGameResult(gameId: ID!, result: GameResult, reason: String, moves: String): Game!
     recordGameCompleted(gameId: ID!): GameXpResult!
+
+    """
+    Ask somebody to be a friend.
+
+    Accept-based and never one-way: the relation grants standing to send a
+    child a direct invitation, and standing like that has to be given rather
+    than taken. Asking somebody who has already asked you accepts instead of
+    creating a mirrored request.
+    """
+    sendFriendRequest(userId: ID!): Friendship!
+    """
+    Answer a request addressed to you. Declining DELETES the row: a refusal is
+    not a fact worth keeping, and keeping it would block the two from ever
+    being friends after they met properly. Blocking is the durable no.
+    """
+    respondToFriendRequest(friendshipId: ID!, accept: Boolean!): Friendship!
+    "Undo a friendship, or withdraw a request you sent."
+    removeFriend(userId: ID!): Boolean!
+    "No, and stop asking. Replaces whatever was between you."
+    blockPlayer(userId: ID!): Boolean!
+
+    "The switches a player owns over their own visibility."
+    updateMySettings(input: MySettingsInput!): Profile!
 
     "Create a challenge — direct (with opponentId) or an open invite link."
     createChallenge(input: CreateChallengeInput!): Challenge!
@@ -801,7 +884,138 @@ export const typeDefs = `#graphql
     INDEPENDENT
   }
 
+  """
+  Where two people stand with each other.
+
+  PENDING means I asked them; PENDING_THEM means they asked me — one enum
+  rather than a boolean beside a status, because "waiting" without a direction
+  is the state a screen cannot draw a button for.
+  """
+  enum FriendRelation {
+    NONE
+    PENDING
+    PENDING_THEM
+    ACCEPTED
+    BLOCKED
+  }
+
+  """
+  A friendship, or a request to be one.
+
+  Both people are PublicPlayer, so §4.3 applies here as everywhere: being
+  somebody's friend is not consent to publish their name.
+  """
+  type Friendship {
+    id: ID!
+    requester: PublicPlayer!
+    addressee: PublicPlayer!
+    status: FriendRelation!
+    "True when the request is waiting on ME rather than on them."
+    awaitingMe: Boolean!
+    createdAt: DateTime!
+    respondedAt: DateTime
+  }
+
+  """
+  A club as its patron may edit it.
+
+  Deliberately NOT name or slug: a club's name is in a public directory
+  beside real schools and on a league table that has to mean something a
+  season later. Renaming is a staff operation. Deliberately not school
+  either — claiming to be a named institution's club is the claim the enquiry
+  funnel exists to check.
+  """
+  input UpdateClubInput {
+    shortName: String
+    region: String
+    level: ClubLevel
+    foundedOn: DateTime
+    crest: CrestInput
+    "Hide the member list from anyone who is not in the club."
+    isPrivate: Boolean
+    """
+    Keep this club's members out of the open pool.
+
+    The per-player switch is Profile.openToChallenges and it defaults to on.
+    This is the lever a school gets over that default. It does NOT stop a
+    named invitation from a club-mate or a friend — only being dealt to a
+    stranger who asked for anyone.
+    """
+    poolOptOut: Boolean
+  }
+
+  input CrestInput {
+    shield: String
+    band: String
+    charge: String
+  }
+
+  """
+  A club anybody may start.
+
+  No schoolId: a self-serve club is INDEPENDENT, and staff attach a school
+  at review if there is a reason to. level is the host institution's
+  education stage and is meaningless without one, so it is a hint rather than
+  a claim.
+  """
+  input CreateClubInput {
+    name: String!
+    "2-4 characters. Drives the crest."
+    shortName: String!
+    "A canonical region key, e.g. SOUTH_WEST."
+    region: String!
+    level: ClubLevel
+  }
+
+  type CreateClubResult {
+    club: Club!
+    """
+    True when the club is waiting on staff. It exists, the caller is its
+    patron, and nobody else can see it or join it until somebody approves.
+    Said plainly rather than left for the patron to discover from an empty
+    directory.
+    """
+    awaitingApproval: Boolean!
+  }
+
+  "A club waiting for somebody to look at it. Staff console."
+  type PendingClub {
+    id: ID!
+    slug: String!
+    name: String!
+    shortName: String!
+    region: String!
+    level: ClubLevel!
+    "The account that created it, and will run it."
+    patronNames: [String!]!
+    createdAt: DateTime!
+  }
+
+  """
+  One switch staff can throw without a deploy.
+
+  A key/value pair rather than a field per setting, because these are
+  operational policies rather than domain facts. An unwritten key reads as its
+  default, so an empty table is every switch in its safe position.
+  """
+  type PlatformSetting {
+    key: String!
+    """
+    JSON-encoded, the way analysisJson and bodyJson already are in this
+    schema — there is no JSON scalar here and adding one for a table of
+    booleans would be a new primitive for one caller. Every current key holds
+    "true" or "false".
+    """
+    value: String!
+  }
+
   enum ClubStatus {
+    """
+    Created by somebody who is not staff, and not yet approved. Invisible: not
+    in the directory, not reachable by slug, and its join code finds nothing.
+    A proposal rather than a club.
+    """
+    PENDING_REVIEW
     ONBOARDING
     ACTIVE
     DORMANT
@@ -923,6 +1137,12 @@ export const typeDefs = `#graphql
     school: School
     "ACTIVE memberships only."
     memberCount: Int!
+    """
+    A private club's roster is not readable by non-members. The club itself
+    stays public — hiding a school that exists would break the directory and
+    the league table. What is withheld is the list of its children.
+    """
+    isPrivate: Boolean!
     honours: [ClubHonour!]!
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -1290,6 +1510,9 @@ export const typeDefs = `#graphql
     crest: Crest
     schoolId: ID
     schoolName: String
+    "The two settings a patron owns. See UpdateClubInput for what each does."
+    isPrivate: Boolean!
+    poolOptOut: Boolean!
   }
 
   "One row of the club roster, as the patron sees it. Names are NOT reduced."
@@ -1427,6 +1650,40 @@ export const typeDefs = `#graphql
   }
 
   extend type Mutation {
+    """
+    Start a club.
+
+    Anybody signed in. It lands PENDING_REVIEW while
+    club.creation.requiresApproval is on — invisible, unjoinable, a proposal
+    — and ONBOARDING when staff have turned that off. Either way the creator
+    becomes its patron, because a club whose first join request nobody can
+    admit is inert.
+
+    Refused while the caller is already an ACTIVE member of another club.
+    """
+    createClub(input: CreateClubInput!): CreateClubResult!
+
+    """
+    Edit your own club. Patron or assistant coach — the club:manage
+    permission the console already checks.
+
+    The hole this fills: the schema had adminCreateClub and five session
+    mutations and nothing that changed a club after it existed, so a patron
+    with a typo in their short name had to email the academy.
+    """
+    updateClub(clubId: ID!, input: UpdateClubInput!): ManagedClubDetail!
+
+    """
+    Mint a new join code, retiring the old one.
+
+    Staff have had this since the console existed and a patron has not, which
+    is backwards: the person who sees a code reach a WhatsApp group it should
+    not have is the patron, and Monday at 8am is not the hour to be emailing
+    an academy. Existing members are unaffected — the code is how you ask to
+    join, not what proves you are in.
+    """
+    regenerateJoinCode(clubId: ID!): ManagedClubDetail!
+
     "Admit a pending join-code request, or decline it."
     decideMembership(membershipId: ID!, admit: Boolean!): ClubMember!
     setMembershipRole(membershipId: ID!, role: MembershipRole!): ClubMember!
@@ -1546,6 +1803,10 @@ export const typeDefs = `#graphql
   extend type Query {
     "Every club, newest first, with its join code and its waiting count."
     adminClubs(search: String, limit: Int, offset: Int): [AdminClub!]!
+    "Clubs proposed from outside the academy, oldest first — a queue, not a list."
+    adminPendingClubs(limit: Int): [PendingClub!]!
+    "Every operational switch, with whatever is stored or its default."
+    platformSettings: [PlatformSetting!]!
   }
 
   extend type Mutation {
@@ -1558,6 +1819,16 @@ export const typeDefs = `#graphql
     Does not demote an existing patron; a club may have several.
     """
     adminSetClubPatron(clubId: ID!, username: String!): AdminClub!
+    "Clubs somebody outside the academy has proposed. Oldest first."
+    adminApproveClub(clubId: ID!): AdminClub!
+    """
+    Refuse a proposed club. Archived rather than deleted, so staff have
+    something to answer from when the teacher writes in, and so the name
+    cannot be re-proposed five minutes later.
+    """
+    adminRejectClub(clubId: ID!): Boolean!
+    "One operational switch. See PlatformSetting."
+    setPlatformSetting(key: String!, value: String!): PlatformSetting!
 
     """
     Mint a new join code, retiring the old one — for the day a code reaches a

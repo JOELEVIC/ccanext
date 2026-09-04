@@ -104,16 +104,49 @@ export class ClubService {
   // ── Roster ─────────────────────────────────────────────────────────────────
 
   /**
+   * Whether the caller is in this club at all — any status, including a
+   * request still waiting on a patron.
+   *
+   * PENDING counts on purpose. Somebody who has spent the join code has been
+   * told by a human which club to join; making them wait for admission before
+   * they may see who is in it would leave them looking at an empty club with
+   * no way to tell it from a broken one.
+   */
+  private async viewerBelongsTo(clubId: string, viewerId?: string | null) {
+    if (!viewerId) return false;
+    const row = await this.repo.membershipOf(clubId, viewerId);
+    return row !== null;
+  }
+
+  /**
    * CONSENT-GATED. Every row goes through `toPublicPlayer()` (BUILD_PLAN §4.3),
    * so a minor without granted consent reaches the client as "Brenda A." with
    * no avatar. `ccaweb` must render what it is given and never re-derive a name.
    */
-  async getRoster(slug: string, teamOnly: boolean): Promise<PublicPlayer[]> {
+  async getRoster(
+    slug: string,
+    teamOnly: boolean,
+    viewerId?: string | null,
+  ): Promise<PublicPlayer[]> {
     // An unknown slug yields an empty roster rather than an error. A club page
     // issues club / clubRoster / clubStanding together: `club` already returns
     // null for a bad slug, and throwing here would turn a 404 page into a 500.
     const club = await this.repo.idBySlug(slug);
     if (!club) return [];
+
+    // ── A private club keeps its list of children to itself ──────────────
+    //
+    // The CLUB stays public — its name is in the directory beside real
+    // schools and its results are in a league table, and hiding those would
+    // break both. What a private club withholds is the roster, which is the
+    // part somebody browsing for an opponent does not need and the part that
+    // is a list of minors.
+    //
+    // Empty rather than an error, for the reason above: this query arrives
+    // alongside two others that must still answer.
+    if (club.isPrivate && !(await this.viewerBelongsTo(club.id, viewerId))) {
+      return [];
+    }
     const rows = await this.repo.roster(club.id, teamOnly);
     const now = new Date();
     return rows.map((row) =>

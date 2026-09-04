@@ -3,6 +3,19 @@ import type { GraphQLContextWithServices } from "@/graphql/context";
 import type { UserRole } from "@prisma/client";
 import { markSelfDisclosed } from "@/domains/user/identityVisibility";
 
+/**
+ * Owner or staff — the same test `identityVisibility.isPrivilegedViewer`
+ * makes, restated here because these two fields are not §4.3 fields and must
+ * not look like they are. §4.3 reduces a name; this simply withholds a
+ * setting from everybody it does not belong to.
+ */
+function isSelfOrStaff(
+  context: GraphQLContextWithServices,
+  userId: string,
+): boolean {
+  return context.viewer.isStaff || context.viewer.userId === userId;
+}
+
 export const userResolvers = {
   Query: {
     me: async (
@@ -178,6 +191,31 @@ export const userResolvers = {
       context.identity.dateOfBirth(parent),
     avatarUrl: (parent: { userId: string; avatarUrl?: string | null }, _: unknown, context: GraphQLContextWithServices) =>
       context.identity.avatarUrl(parent),
+    /**
+     * The two switches, visible to their owner and to staff and to nobody
+     * else.
+     *
+     * Whether somebody is open to a game is their business rather than a
+     * browsable attribute: a list of exactly which children have left the
+     * default on is the list a person looking for an easy target would want,
+     * and it is not a list this API should be able to produce.
+     *
+     * The pool queries filter on the column server-side and never return it,
+     * so the setting does its work without ever being readable.
+     */
+    openToChallenges: (
+      parent: { userId: string; openToChallenges?: boolean | null },
+      _: unknown,
+      context: GraphQLContextWithServices,
+    ) =>
+      isSelfOrStaff(context, parent.userId) ? (parent.openToChallenges ?? true) : null,
+
+    gamesPublic: (
+      parent: { userId: string; gamesPublic?: boolean | null },
+      _: unknown,
+      context: GraphQLContextWithServices,
+    ) => (isSelfOrStaff(context, parent.userId) ? (parent.gamesPublic ?? true) : null),
+
     level: (parent: { xp: number }) => {
       return 1 + Math.floor((parent.xp ?? 0) / 100);
     },

@@ -37,6 +37,16 @@ import { FixtureService as FixtureServiceClass } from "@/domains/fixture/fixture
 import { EnquiryService as EnquiryServiceClass } from "@/domains/enquiry/enquiry.service";
 import { ClubManagementService as ClubManagementServiceClass } from "@/domains/club/management.service";
 import { MatchDayService as MatchDayServiceClass } from "@/domains/fixture/matchday.service";
+import { FriendService as FriendServiceClass } from "@/domains/friend/friend.service";
+import { PlayerLookupService as PlayerLookupServiceClass } from "@/domains/user/playerLookup.service";
+import { PlayerSettingsService as PlayerSettingsServiceClass } from "@/domains/user/playerSettings.service";
+import { PlatformSettingService as PlatformSettingServiceClass } from "@/domains/platform/platformSetting.service";
+import { ClubSelfServeService as ClubSelfServeServiceClass } from "@/domains/club/selfServe.service";
+import type { FriendService } from "@/domains/friend/friend.service";
+import type { PlayerLookupService } from "@/domains/user/playerLookup.service";
+import type { PlayerSettingsService } from "@/domains/user/playerSettings.service";
+import type { PlatformSettingService } from "@/domains/platform/platformSetting.service";
+import type { ClubSelfServeService } from "@/domains/club/selfServe.service";
 import type { AuthContext } from "@/utils/types";
 import { IdentityGate, prismaConsentReader } from "@/domains/user/identityGate";
 import type { Viewer } from "@/domains/user/identityVisibility";
@@ -97,6 +107,16 @@ export interface GraphQLContextWithServices {
     /** Match day: team sheets, board results, validation. Takes the club
      *  service because every side-of-the-fixture check is a club permission. */
     matchDayService: MatchDayService;
+    /** Friends — accept-based, and the standing to invite somebody directly. */
+    friendService: FriendService;
+    /** Finding one person you already know, and who is open to a game. */
+    playerLookupService: PlayerLookupService;
+    /** A player's switches over their own visibility. */
+    playerSettingsService: PlayerSettingsService;
+    /** Operational switches staff throw without a deploy. */
+    platformSettingService: PlatformSettingService;
+    /** A club made by the person who will run it. Reads the approval switch. */
+    clubSelfServeService: ClubSelfServeService;
   };
 }
 
@@ -127,6 +147,10 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
   // both must consult the same authorisation path.
   const clubManagement = new ClubManagementServiceClass(prisma);
 
+  // Self-serve club creation reads a platform switch to decide whether the
+  // club it makes needs approving, so the two are constructed together.
+  const platformSettings = new PlatformSettingServiceClass(prisma);
+
   return {
     user,
     admin,
@@ -153,6 +177,11 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       enquiryService: new EnquiryServiceClass(prisma),
       clubManagementService: clubManagement,
       matchDayService: new MatchDayServiceClass(prisma, clubManagement),
+      friendService: new FriendServiceClass(prisma),
+      playerLookupService: new PlayerLookupServiceClass(prisma),
+      playerSettingsService: new PlayerSettingsServiceClass(prisma),
+      platformSettingService: platformSettings,
+      clubSelfServeService: new ClubSelfServeServiceClass(prisma, platformSettings),
     },
   };
 }

@@ -17,6 +17,7 @@ import { seasonResolvers } from "./season.resolvers";
 import { fixtureResolvers } from "./fixture.resolvers";
 import { enquiryResolvers } from "./enquiry.resolvers";
 import { clubManagementResolvers } from "./clubManagement.resolvers";
+import { friendResolvers } from "./friend.resolvers";
 
 const dateTimeScalar = new GraphQLScalarType({
   name: "DateTime",
@@ -55,6 +56,7 @@ export const resolvers = {
     ...fixtureResolvers.Query,
     ...enquiryResolvers.Query,
     ...clubManagementResolvers.Query,
+    ...friendResolvers.Query,
   },
   Mutation: {
     ...userResolvers.Mutation,
@@ -70,6 +72,7 @@ export const resolvers = {
     ...tournamentRoundResolvers.Mutation,
     ...enquiryResolvers.Mutation,
     ...clubManagementResolvers.Mutation,
+    ...friendResolvers.Mutation,
   },
   Activity: activityResolvers.Activity,
   User: userResolvers.User,

@@ -47,6 +47,33 @@ export const adminResolvers = {
       return adminCall(() => context.services.clubAdminService.list(args));
     },
 
+    adminPendingClubs: async (
+      _: unknown,
+      { limit }: { limit?: number | null },
+      ctx: GraphQLContextWithServices,
+    ) => {
+      requireAdmin(ctx);
+      const rows = await ctx.services.clubSelfServeService.pending(
+        Math.min(Math.max(limit ?? 100, 1), 200),
+      );
+      return rows.map((club) => ({
+        ...club,
+        patronNames: club.memberships.map((m) => m.user.username),
+      }));
+    },
+
+    platformSettings: async (
+      _: unknown,
+      __: unknown,
+      ctx: GraphQLContextWithServices,
+    ) => {
+      requireAdmin(ctx);
+      const rows = await ctx.services.platformSettingService.all();
+      // JSON-encoded on the way out, the way `analysisJson` already is — see
+      // the note on PlatformSetting in the SDL.
+      return rows.map((r) => ({ key: r.key, value: JSON.stringify(r.value) }));
+    },
+
     // Returns null (not an error) when unauthenticated, so the admin app can
     // probe session state on load.
     adminMe: async (_: unknown, __: unknown, context: GraphQLContextWithServices) => {
@@ -113,6 +140,49 @@ export const adminResolvers = {
       return adminCall(() =>
         context.services.clubAdminService.setPatron(clubId, username)
       );
+    },
+
+    adminApproveClub: async (
+      _: unknown,
+      { clubId }: { clubId: string },
+      ctx: GraphQLContextWithServices,
+    ) => {
+      requireAdmin(ctx);
+      await ctx.services.clubSelfServeService.approve(clubId);
+      // Answered with the ordinary AdminClub row, so the console's list and
+      // its approval queue speak about one shape. `list` is the only public
+      // way in — `ClubAdminService.one` is private, and widening it to serve
+      // one caller would put a second projection of a club in the service.
+      const all = await ctx.services.clubAdminService.list({ limit: 200 });
+      const approved = all.find((c) => c.id === clubId);
+      if (!approved) throw new Error("Approved club could not be re-read.");
+      return approved;
+    },
+
+    adminRejectClub: async (
+      _: unknown,
+      { clubId }: { clubId: string },
+      ctx: GraphQLContextWithServices,
+    ) => {
+      requireAdmin(ctx);
+      await ctx.services.clubSelfServeService.reject(clubId);
+      return true;
+    },
+
+    setPlatformSetting: async (
+      _: unknown,
+      { key, value }: { key: string; value: string },
+      ctx: GraphQLContextWithServices,
+    ) => {
+      requireAdmin(ctx);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        throw new Error('That value is not JSON. A boolean setting takes "true" or "false".');
+      }
+      const row = await ctx.services.platformSettingService.set(key, parsed);
+      return { key: row.key, value: JSON.stringify(row.value) };
     },
 
     adminRegenerateJoinCode: async (

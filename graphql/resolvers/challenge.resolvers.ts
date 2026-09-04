@@ -31,11 +31,12 @@ export const challengeResolvers = {
 
     openChallenges: async (
       _: unknown,
-      __: unknown,
+      { timeControl }: { timeControl?: string | null },
       context: GraphQLContextWithServices
     ) => {
       return context.services.challengeService.openChallenges(
-        context.user?.userId
+        context.user?.userId,
+        timeControl ?? null
       );
     },
   },

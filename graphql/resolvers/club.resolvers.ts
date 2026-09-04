@@ -31,11 +31,19 @@ export const clubResolvers = {
     clubByJoinCode: (_: unknown, { code }: { code: string }, ctx: GraphQLContextWithServices) =>
       ctx.services.clubService.getClubByJoinCode(code),
 
+    // The viewer goes in because a PRIVATE club's roster is readable only by
+    // its own members. The club stays public either way — what a private club
+    // withholds is the list of its children, not its existence.
     clubRoster: (
       _: unknown,
       { slug, teamOnly }: { slug: string; teamOnly?: boolean | null },
       ctx: GraphQLContextWithServices
-    ) => ctx.services.clubService.getRoster(slug, teamOnly ?? false),
+    ) =>
+      ctx.services.clubService.getRoster(
+        slug,
+        teamOnly ?? false,
+        ctx.viewer.userId,
+      ),
 
     clubStanding: (_: unknown, { slug }: { slug: string }, ctx: GraphQLContextWithServices) =>
       ctx.services.clubService.getClubStanding(slug),
@@ -54,6 +62,14 @@ export const clubResolvers = {
       ctx: GraphQLContextWithServices
     ): number | Promise<number> =>
       parent.memberCount ?? ctx.services.clubService.memberCount(parent.id),
+
+    // False rather than null for a club reached through a fixture or a
+    // standings row, which have not selected it. The protective direction
+    // would be `true`, and it is the wrong default here: a club that has not
+    // said it is private is not private, and treating an unselected column as
+    // "hide the roster" would silently empty every roster on the site.
+    isPrivate: (parent: PublicClub & { isPrivate?: boolean }) =>
+      parent.isPrivate ?? false,
 
     honours: (parent: PublicClub) => parent.honours ?? [],
     school: (parent: PublicClub & { school?: unknown }) => parent.school ?? null,

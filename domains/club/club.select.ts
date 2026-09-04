@@ -20,6 +20,11 @@ export const clubPublicSelect = {
   region: true,
   level: true,
   status: true,
+  // Public because a person deciding whether to browse a club's roster should
+  // see that it has one to browse, rather than tapping through to an empty
+  // list. The flag says "this club keeps its members to itself"; it does not
+  // say who they are.
+  isPrivate: true,
   crestJson: true,
   foundedOn: true,
   createdAt: true,

@@ -1,6 +1,7 @@
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type ClubLevel, type PrismaClient } from "@prisma/client";
 
 import { AuthorizationError, NotFoundError, ValidationError } from "@/utils/types";
+import { normalizeRegion } from "@/domains/region/regions";
 
 import {
   can,
@@ -8,6 +9,24 @@ import {
   type ClubAction,
   type MembershipRoleValue,
 } from "./permissions";
+import { uniqueJoinCode } from "./provisioning";
+
+/**
+ * What a patron may change about their own club.
+ *
+ * Every field optional, and `undefined` means "leave it alone" — a settings
+ * screen saving one switch must not send the other six back as it last read
+ * them and clobber somebody else's edit in between.
+ */
+export interface UpdateClubInput {
+  shortName?: string;
+  region?: string;
+  level?: ClubLevel | null;
+  foundedOn?: Date | null;
+  isPrivate?: boolean;
+  poolOptOut?: boolean;
+  crest?: { shield?: string; band?: string; charge?: string } | null;
+}
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -121,6 +140,7 @@ export class ClubManagementService {
       select: {
         id: true, slug: true, name: true, shortName: true, region: true,
         level: true, status: true, joinCode: true, crestJson: true,
+        isPrivate: true, poolOptOut: true,
         school: { select: { id: true, name: true } },
       },
     });
@@ -404,6 +424,83 @@ export class ClubManagementService {
       // missing from it is how attendance quietly stops being a record.
       rows: members.map((m) => ({ member: m, state: byUser.get(m.userId) ?? null })),
     };
+  }
+
+  // ── The club itself ──────────────────────────────────────────────────────
+
+  /**
+   * Edit the club.
+   *
+   * **There was no way to do this.** The schema carried `adminCreateClub` and
+   * five session mutations and nothing at all that changed a club after it
+   * existed — a patron whose crest was wrong, whose short name was a typo, or
+   * whose club had moved region, had to email somebody. It is the one real
+   * hole in the club CRUD surface.
+   *
+   * ── What a patron may change, and what stays with staff ─────────────────
+   *
+   * NOT the name, and not the slug it derives from. A club's name is in a
+   * public directory beside real schools and on a league table that has to
+   * mean something a season later; renaming it is a thing somebody should
+   * have a reason for, and staff have `adminUpdateClub` for the day there is
+   * one. Everything else here is the club describing itself.
+   *
+   * NOT the school either. Attaching one is a claim to be the chess club of a
+   * named institution, which is the claim the enquiry funnel exists to check.
+   *
+   * Every field is optional and `undefined` means "leave it": a settings
+   * screen that saves one switch must not send the other six back as they
+   * were and race with somebody else's edit.
+   */
+  async updateClub(userId: string, clubId: string, input: UpdateClubInput) {
+    await this.requireClubAction(userId, clubId, "club:manage");
+
+    const data: Prisma.ClubUpdateInput = {};
+
+    if (input.shortName !== undefined) {
+      const shortName = input.shortName.trim().toUpperCase();
+      if (shortName.length < 2 || shortName.length > 4) {
+        throw new ValidationError("The short name is 2 to 4 characters.");
+      }
+      data.shortName = shortName;
+    }
+
+    if (input.region !== undefined) {
+      const region = normalizeRegion(input.region);
+      if (!region) throw new ValidationError("That is not one of Cameroon's regions.");
+      data.region = region;
+    }
+
+    if (input.level !== undefined && input.level !== null) data.level = input.level;
+    if (input.foundedOn !== undefined) data.foundedOn = input.foundedOn;
+    if (input.isPrivate !== undefined) data.isPrivate = input.isPrivate;
+    if (input.poolOptOut !== undefined) data.poolOptOut = input.poolOptOut;
+
+    // The crest is three strings and the renderer validates them; an unknown
+    // charge draws the club's initials, which is the same fallback a club with
+    // no crest at all gets. Storing it whole keeps `crestJson` one value.
+    if (input.crest !== undefined) {
+      data.crestJson = input.crest === null ? Prisma.DbNull : (input.crest as never);
+    }
+
+    await this.prisma.club.update({ where: { id: clubId }, data });
+    return clubId;
+  }
+
+  /**
+   * Mint a new join code, retiring the old one.
+   *
+   * Staff have had this since the console existed and a patron has not, which
+   * is backwards: the person who watches a code reach a WhatsApp group it
+   * should not have is the patron, and 8am on a Monday is not the hour to be
+   * emailing an academy. Existing members are unaffected — the code is how
+   * you ask to join, not what proves you are in.
+   */
+  async regenerateJoinCode(userId: string, clubId: string) {
+    await this.requireClubAction(userId, clubId, "club:manage");
+    const joinCode = await uniqueJoinCode(this.prisma);
+    await this.prisma.club.update({ where: { id: clubId }, data: { joinCode } });
+    return joinCode;
   }
 
   private async loadSession(id: string) {

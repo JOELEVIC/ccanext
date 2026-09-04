@@ -15,27 +15,29 @@ datasource db {
 // ============================================================================
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  username      String    @unique
-  passwordHash  String
-  role          UserRole
-  schoolId      String?
-  school        School?   @relation(fields: [schoolId], references: [id], onDelete: SetNull)
-  profile       Profile?
-  gamesAsWhite  Game[]    @relation("WhitePlayer")
-  gamesAsBlack  Game[]    @relation("BlackPlayer")
-  rating        Int       @default(1200)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  role         UserRole
+  schoolId     String?
+  school       School?  @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  profile      Profile?
+  gamesAsWhite Game[]   @relation("WhitePlayer")
+  gamesAsBlack Game[]   @relation("BlackPlayer")
+  rating       Int      @default(1200)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   tournamentParticipants TournamentParticipant[]
   variantRatings         UserVariantRating[]
   puzzleStats            PuzzleUserStats?
   courseProgress         CourseProgress[]
   playerRating           PlayerRating?
-  challengesCreated      Challenge[]            @relation("ChallengeCreator")
-  challengesReceived     Challenge[]            @relation("ChallengeOpponent")
+  challengesCreated      Challenge[]             @relation("ChallengeCreator")
+  challengesReceived     Challenge[]             @relation("ChallengeOpponent")
+  friendRequestsSent     Friendship[]            @relation("FriendRequester")
+  friendRequestsReceived Friendship[]            @relation("FriendAddressee")
   placementRuns          PlacementRun[]
   ladderLessons          LadderLessonProgress[]
   ladderExams            LadderExamResult[]
@@ -146,27 +148,115 @@ enum UserRole {
 }
 
 model Profile {
-  id                   String    @id @default(uuid())
-  userId               String    @unique
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  firstName            String
-  lastName             String
-  dateOfBirth          DateTime?
-  country              String    @default("CM")
-  chessTitle           String?
-  avatarUrl            String?
-  followerCount        Int       @default(0)
-  friendCount          Int       @default(0)
-  ratingTrendJson      Json?
-  xp                   Int       @default(0)
-  lastPuzzleSolvedAt   DateTime?
-  puzzleStreakCount    Int       @default(0)
-  badges               Badge[]
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName          String
+  lastName           String
+  dateOfBirth        DateTime?
+  country            String    @default("CM")
+  chessTitle         String?
+  avatarUrl          String?
+  followerCount      Int       @default(0)
+  friendCount        Int       @default(0)
+  ratingTrendJson    Json?
+  xp                 Int       @default(0)
+  lastPuzzleSolvedAt DateTime?
+  puzzleStreakCount  Int       @default(0)
+
+  /// Whether this player may be drawn from the open pool by somebody who did
+  /// not name them. Default TRUE — a platform where nobody can be matched is
+  /// a platform with no games on it.
+  ///
+  /// This gates WHO MAY BE CHALLENGED. It has nothing to do with §4.3, which
+  /// gates WHOSE NAME IS PUBLISHED and is untouched: a non-consented minor is
+  /// "Brenda A." with no avatar whether or not they are in the pool.
+  openToChallenges Boolean @default(true)
+
+  /// Whether finished games appear on this player's public record.
+  gamesPublic Boolean @default(true)
+
+  /// A lookup key, and only that.
+  ///
+  /// NEVER returned by any resolver — not to the owner, not to staff. It
+  /// exists so a friend request can be addressed to somebody whose username
+  /// you do not know, and it is matched only on a whole normalised value, so
+  /// no query can be used to walk the space of numbers.
+  phone String? @unique
+
+  badges    Badge[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@map("profiles")
+}
+
+// ============================================================================
+// FRIENDS
+// ============================================================================
+
+/// One direction of a request, and one row per pair once it is answered.
+///
+/// ── Why accept-based and never one-way ───────────────────────────────────
+///
+/// A follow is a thing you do TO somebody. A friendship is a thing two people
+/// agree to. The members of this platform are schoolchildren, and the whole
+/// point of the relation is that it grants an adult — or another child — the
+/// standing to send them an invitation directly. That standing has to be
+/// given, not taken.
+///
+/// BLOCKED is the same row, flipped. Somebody who blocks a person is saying
+/// "no, and stop asking", and a separate block table would let a request be
+/// re-sent while the block sat in a different table nobody joined against.
+model Friendship {
+  id          String           @id @default(uuid())
+  requesterId String
+  requester   User             @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User             @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  /// One row per ordered pair. The service refuses a request when a row
+  /// exists in EITHER direction, which is the check the index cannot make —
+  /// see domains/friend/friend.service.ts.
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+  @@map("friendships")
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+
+  @@map("friendship_status")
+}
+
+// ============================================================================
+// PLATFORM SETTINGS
+// ============================================================================
+
+/// One row per switch that staff can throw without a deploy.
+///
+/// A key/value table rather than a column per setting, because these are
+/// operational levers rather than domain facts: "does club creation need
+/// approval" is a policy somebody changes on a Tuesday, not an attribute of
+/// anything. A column would need a migration each time.
+///
+/// Written only through `setPlatformSetting`, which is admin-token gated. Read
+/// through `PlatformSettingService`, which supplies the default for a key that
+/// has never been written — so an empty table behaves exactly like the safe
+/// position of every switch.
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
 }
 
 // ============================================================================
@@ -203,34 +293,34 @@ enum SchoolKind {
 // ============================================================================
 
 model Game {
-  id             String        @id @default(uuid())
-  whiteId        String
-  blackId        String
-  white          User          @relation("WhitePlayer", fields: [whiteId], references: [id], onDelete: Cascade)
-  black          User          @relation("BlackPlayer", fields: [blackId], references: [id], onDelete: Cascade)
-  moves          String        @db.Text // PGN or JSON format
-  result         GameResult?
-  status         GameStatus    @default(PENDING)
-  timeControl    String        // e.g., "10+0", "30+0"
-  rated          Boolean       @default(true) // false = casual: no rating change
-  whiteRating    Int?          // each player's rating snapshot when the game was created
-  blackRating    Int?
-  analysisJson   Json?
-  tournamentId   String?
-  tournament     Tournament?   @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
-  gameXpAwards   GameXpAward[]
-  challenge      Challenge?
+  id              String          @id @default(uuid())
+  whiteId         String
+  blackId         String
+  white           User            @relation("WhitePlayer", fields: [whiteId], references: [id], onDelete: Cascade)
+  black           User            @relation("BlackPlayer", fields: [blackId], references: [id], onDelete: Cascade)
+  moves           String          @db.Text // PGN or JSON format
+  result          GameResult?
+  status          GameStatus      @default(PENDING)
+  timeControl     String // e.g., "10+0", "30+0"
+  rated           Boolean         @default(true) // false = casual: no rating change
+  whiteRating     Int? // each player's rating snapshot when the game was created
+  blackRating     Int?
+  analysisJson    Json?
+  tournamentId    String?
+  tournament      Tournament?     @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  gameXpAwards    GameXpAward[]
+  challenge       Challenge?
   // Club-domain additions (BUILD_PLAN §3.2). `validationState != NOT_REQUIRED`
   // is the signal the `cca` game server uses to SKIP its own rating write
   // (§4.4) — a fixture board is rated once, at arbiter validation.
   source          GameSource      @default(ONLINE)
   validationState ValidationState @default(NOT_REQUIRED)
-  clubContextId   String?       // set for club-ladder games
+  clubContextId   String? // set for club-ladder games
   // Back-relation only. FixtureBoard.gameId is the canonical side of the link;
   // there is deliberately no `fixtureBoardId` column on games.
   fixtureBoard    FixtureBoard?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@index([whiteId])
   @@index([blackId])
@@ -261,7 +351,7 @@ model Challenge {
   creator      User            @relation("ChallengeCreator", fields: [creatorId], references: [id], onDelete: Cascade)
   opponentId   String?
   opponent     User?           @relation("ChallengeOpponent", fields: [opponentId], references: [id], onDelete: Cascade)
-  creatorColor String          // "white" | "black" | "random"
+  creatorColor String // "white" | "black" | "random"
   timeControl  String
   rated        Boolean         @default(true)
   status       ChallengeStatus @default(OPEN)
@@ -333,35 +423,35 @@ enum PublicNameMode {
 // ============================================================================
 
 model Tournament {
-  id               String                  @id @default(uuid())
-  name             String
-  schoolId         String
-  school           School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  startDate        DateTime
-  endDate          DateTime?
-  status           TournamentStatus        @default(UPCOMING)
-  chessVariant     String                  @default("Blitz")
-  arenaTimeControl String                  @default("3+0")
-  format           String                  @default("ARENA")
-  maxPlayers       Int                     @default(450)
-  durationMinutes  Int                     @default(60)
-  cardColor        String                  @default("blue")
-  isSponsored      Boolean                 @default(false)
-  isRated          Boolean                 @default(true)
-  iconType         String?
-  prizePoolJson    Json?
+  id                  String                  @id @default(uuid())
+  name                String
+  schoolId            String
+  school              School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  startDate           DateTime
+  endDate             DateTime?
+  status              TournamentStatus        @default(UPCOMING)
+  chessVariant        String                  @default("Blitz")
+  arenaTimeControl    String                  @default("3+0")
+  format              String                  @default("ARENA")
+  maxPlayers          Int                     @default(450)
+  durationMinutes     Int                     @default(60)
+  cardColor           String                  @default("blue")
+  isSponsored         Boolean                 @default(false)
+  isRated             Boolean                 @default(true)
+  iconType            String?
+  prizePoolJson       Json?
   // Professional-tournament engine (all additive; existing school-scoped, arena
   // tournaments keep working). `format` stays a String: ARENA | SWISS | ROUND_ROBIN | KNOCKOUT.
   totalRounds         Int? // planned rounds for SWISS/ROUND_ROBIN/KNOCKOUT (null = arena/open)
-  currentRound        Int               @default(0)
-  tiebreak            String            @default("BUCHHOLZ") // BUCHHOLZ | SONNEBORN_BERGER | NONE
+  currentRound        Int                     @default(0)
+  tiebreak            String                  @default("BUCHHOLZ") // BUCHHOLZ | SONNEBORN_BERGER | NONE
   registrationOpensAt DateTime?
-  checkInRequired     Boolean           @default(false)
+  checkInRequired     Boolean                 @default(false)
   rounds              TournamentRound[]
-  games            Game[]
-  participants     TournamentParticipant[]
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  games               Game[]
+  participants        TournamentParticipant[]
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   @@index([schoolId])
   @@index([status])
@@ -379,21 +469,21 @@ enum TournamentStatus {
 }
 
 model TournamentParticipant {
-  id           String     @id @default(uuid())
-  tournamentId String
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  score        Float      @default(0)
+  id              String     @id @default(uuid())
+  tournamentId    String
+  tournament      Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score           Float      @default(0)
   // Pairing + tiebreak state (additive).
-  colorHistory    String[] @default([]) // ["w","b",...] for color balancing
-  opponentIds     String[] @default([]) // userIds already faced (no-repeat in Swiss)
-  byes            Int      @default(0)
-  checkedIn       Boolean  @default(false)
-  withdrawn       Boolean  @default(false)
-  buchholz        Float    @default(0)
-  sonnebornBerger Float    @default(0)
-  createdAt    DateTime   @default(now())
+  colorHistory    String[]   @default([]) // ["w","b",...] for color balancing
+  opponentIds     String[]   @default([]) // userIds already faced (no-repeat in Swiss)
+  byes            Int        @default(0)
+  checkedIn       Boolean    @default(false)
+  withdrawn       Boolean    @default(false)
+  buchholz        Float      @default(0)
+  sonnebornBerger Float      @default(0)
+  createdAt       DateTime   @default(now())
 
   @@unique([tournamentId, userId])
   @@index([tournamentId])
@@ -450,8 +540,8 @@ enum RoundStatus {
 
 model Puzzle {
   id         String   @id @default(uuid())
-  fen        String   // Chess position in FEN notation
-  solution   String   // Move sequence (e.g., "e2e4 e7e5")
+  fen        String // Chess position in FEN notation
+  solution   String // Move sequence (e.g., "e2e4 e7e5")
   difficulty Int      @default(1200)
   theme      String[] // e.g., ["fork", "pin", "checkmate"]
   createdAt  DateTime @default(now())
@@ -495,13 +585,13 @@ enum ChessVariant {
 }
 
 model UserVariantRating {
-  id           String       @id @default(uuid())
-  userId       String
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  variant      ChessVariant
-  rating       Int          @default(1200)
-  ratingDelta  Int          @default(0)
-  gamesPlayed  Int          @default(0)
+  id          String       @id @default(uuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variant     ChessVariant
+  rating      Int          @default(1200)
+  ratingDelta Int          @default(0)
+  gamesPlayed Int          @default(0)
 
   @@unique([userId, variant])
   @@index([userId])
@@ -509,15 +599,15 @@ model UserVariantRating {
 }
 
 model PuzzleUserStats {
-  id                  String   @id @default(uuid())
-  userId              String   @unique
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  periodDays          Int      @default(30)
-  solvedCount         Int      @default(0)
-  performanceRating   Int    @default(1800)
-  successRate         Float    @default(0)
-  radarSkillsJson     Json
-  updatedAt           DateTime @updatedAt
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periodDays        Int      @default(30)
+  solvedCount       Int      @default(0)
+  performanceRating Int      @default(1800)
+  successRate       Float    @default(0)
+  radarSkillsJson   Json
+  updatedAt         DateTime @updatedAt
 
   @@index([userId])
   @@map("puzzle_user_stats")
@@ -534,26 +624,26 @@ model PlatformMetric {
 }
 
 model Course {
-  id          String           @id @default(uuid())
-  slug        String           @unique
-  title       String
-  category    String
-  sortOrder   Int              @default(0)
-  createdAt   DateTime         @default(now())
-  progress    CourseProgress[]
+  id        String           @id @default(uuid())
+  slug      String           @unique
+  title     String
+  category  String
+  sortOrder Int              @default(0)
+  createdAt DateTime         @default(now())
+  progress  CourseProgress[]
 
   @@index([category])
   @@map("courses")
 }
 
 model CourseProgress {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  courseId    String
-  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  completed   Boolean  @default(false)
-  bookmarked  Boolean  @default(false)
+  id         String  @id @default(uuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId   String
+  course     Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  completed  Boolean @default(false)
+  bookmarked Boolean @default(false)
 
   @@unique([userId, courseId])
   @@index([userId])
@@ -611,15 +701,15 @@ enum LadderExamGrade {
 /// One lesson, finished. The spine of the ladder: ~220 rows for a student who
 /// completes every tier, and the only thing the map needs to draw itself.
 model LadderLessonProgress {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// The app's own lesson slug, e.g. `coord-guard`. Opaque here on purpose —
   /// the curriculum ships in the app, and a server that validated these
   /// against a list would need redeploying every time a tier gained a lesson.
-  lessonId    String
-  tierId      String
+  lessonId String
+  tierId   String
 
   /// Kept at the EARLIEST claim. A lesson finished in March on a phone since
   /// lost was not finished again in September on a new one.
@@ -633,17 +723,17 @@ model LadderLessonProgress {
 /// One sat exam. Append-only: a sitting is something that happened, and the
 /// history is what makes a re-sit visible.
 model LadderExamResult {
-  id          String          @id @default(uuid())
-  userId      String
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// Generated on the device, and the reason a retried push is not a second
   /// sitting. The phone may be offline for a week and flush the same queue
   /// twice; this is what makes that harmless.
-  attemptId   String
+  attemptId String
 
-  examId      String
-  tierId      String
+  examId String
+  tierId String
 
   /// What the student scored, and what the paper was worth. The only two
   /// numbers taken on trust — an offline app is the sole witness to its own
@@ -654,15 +744,15 @@ model LadderExamResult {
   /// Derived, never accepted: `percentFor` and `gradeFor` in
   /// `domains/learning/ladder.ts`. Yusupov's bands, which the app's exams
   /// use verbatim — under 60 fails, 60-74 passes, 75-89 good, 90+ excellent.
-  percent     Int
-  grade       LadderExamGrade
+  percent Int
+  grade   LadderExamGrade
 
-  startedAt   DateTime
-  finishedAt  DateTime
+  startedAt  DateTime
+  finishedAt DateTime
 
   /// Server clock, for support questions the two above cannot answer — such as
   /// a sitting dated last March that arrived this morning.
-  recordedAt  DateTime        @default(now())
+  recordedAt DateTime @default(now())
 
   @@unique([userId, attemptId])
   @@index([userId, tierId])
@@ -677,15 +767,15 @@ model LadderExamResult {
 /// product treats it as an award — it is dated, it is displayed, and it is
 /// printed at the club.
 model LadderDiploma {
-  id       String          @id @default(uuid())
-  userId   String
-  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tierId   String
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tierId String
 
   /// The best percentage this student has passed the tier with. A later,
   /// worse sitting never lowers it — see `improvesDiploma`.
-  percent  Int
-  grade    LadderExamGrade
+  percent Int
+  grade   LadderExamGrade
 
   /// When it was earned, not when it was last matched: a tie on percentage
   /// keeps the earlier date.
@@ -770,6 +860,7 @@ enum ActivityStatus {
 
   @@map("activity_status")
 }
+
 // ============================================================================
 // CLUB / SEASON / COMPETITION DOMAIN — BUILD_PLAN §3.1
 // ----------------------------------------------------------------------------
@@ -813,9 +904,30 @@ model Club {
   crestJson Json? // { shield, band, charge } — see BUILD_PLAN §5
   status    ClubStatus @default(ONBOARDING)
   joinCode  String     @unique // NEVER exposed on a public GraphQL type
+
+  /// A private club's roster is not readable by non-members.
+  ///
+  /// The club itself stays in the public directory — a school that exists is
+  /// a fact, and hiding it would break the enquiry funnel and the league
+  /// table. What a private club withholds is the LIST OF ITS CHILDREN, which
+  /// is the part somebody browsing for an opponent does not need.
+  isPrivate Boolean @default(false)
+
+  /// This club's members are not drawn from the open pool.
+  ///
+  /// The per-player switch is `Profile.openToChallenges` and it defaults to
+  /// on. This is the lever a school gets over that default: a patron who does
+  /// not want their eleven-year-olds matched with strangers can say so once,
+  /// for everybody, instead of hoping thirty families each find the setting.
+  ///
+  /// It does NOT stop a named challenge. A club-mate, a friend, or somebody
+  /// who found them through a club roster can still invite them; what stops
+  /// is being dealt to a stranger who asked for "anyone".
+  poolOptOut Boolean @default(false)
+
   foundedOn DateTime?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   memberships   ClubMembership[]
   sessions      ClubSession[]
@@ -855,6 +967,14 @@ enum ClubKind {
 }
 
 enum ClubStatus {
+  /// Created by somebody who is not staff, while approval is required.
+  ///
+  /// Not the same as ONBOARDING, which already means "staff made it and have
+  /// not published it". This one means "nobody has agreed it should exist".
+  /// It is deliberately absent from PUBLIC_CLUB_STATUSES, so a club waiting
+  /// on review is invisible in the directory and inert in every query — the
+  /// join code works for nobody because nobody can find the club.
+  PENDING_REVIEW
   ONBOARDING
   ACTIVE
   DORMANT

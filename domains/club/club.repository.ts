@@ -9,6 +9,13 @@ import { publicPlayerSelect } from "@/domains/user/publicPlayer.select";
  * what the "signed schools" credibility surface is for. DORMANT clubs stay
  * listed so their record and honours do not vanish mid-season.
  */
+/**
+ * PENDING_REVIEW is deliberately absent. A club somebody created while
+ * approval was required has not been agreed to exist yet: it must not appear
+ * in the directory, must not be reachable by slug, and its join code must
+ * find nothing — otherwise "waiting for approval" would be a club with
+ * members in it by the time a human looked at it.
+ */
 export const PUBLIC_CLUB_STATUSES: ClubStatus[] = [
   ClubStatus.ONBOARDING,
   ClubStatus.ACTIVE,
@@ -84,10 +91,29 @@ export class ClubRepository {
   }
 
   /** Just the id, for the roster and standing lookups. */
+  /**
+   * Also returns `isPrivate`, because every caller that resolves a slug to an
+   * id is about to read something belonging to that club, and whether the
+   * club withholds its roster is part of answering that.
+   */
   idBySlug(slug: string) {
     return this.prisma.club.findFirst({
       where: { slug, status: { in: PUBLIC_CLUB_STATUSES } },
-      select: { id: true },
+      select: { id: true, isPrivate: true },
+    });
+  }
+
+  /**
+   * One person's membership of one club, whatever its status.
+   *
+   * Selects nothing but the status: every caller so far is asking "is this
+   * person in this club", and a projection that carried the row would invite
+   * somebody to read a name off it on a path that has not been consent-gated.
+   */
+  membershipOf(clubId: string, userId: string) {
+    return this.prisma.clubMembership.findUnique({
+      where: { clubId_userId: { clubId, userId } },
+      select: { status: true, role: true },
     });
   }
 

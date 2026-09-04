@@ -37,7 +37,7 @@ const LIMITS = {
   note: 2000,
 } as const;
 
-export type EnquiryResultCode = "OK" | "VALIDATION" | "RATE_LIMITED";
+export type EnquiryResultCode = "OK" | "VALIDATION" | "RATE_LIMITED" | "ERROR";
 
 export interface SchoolEnquiryResult {
   ok: boolean;
@@ -146,26 +146,57 @@ export class EnquiryService {
     );
     if (!byPhone.allowed) return rateLimited();
 
-    const created = await this.repo.create({
-      schoolName,
-      town: clean(input.town) || null,
-      region,
-      // An independent enquiry has no school and therefore no education stage.
-      // The old unconditional default filed every one of them as a secondary
-      // school, which is how they would have reached the staff queue mislabelled.
-      kind: input.kind ?? ClubKind.SCHOOL,
-      level:
-        (input.kind ?? ClubKind.SCHOOL) === ClubKind.INDEPENDENT
-          ? null
-          : (input.level ?? ClubLevel.SECONDARY),
-      sizeBand: clean(input.sizeBand) || null,
-      contactName,
-      contactRole: clean(input.contactRole) || null,
-      contactPhone,
-      contactEmail: email || null,
-      note: clean(input.note) || null,
-      wantsFrench: input.wantsFrench ?? false,
-    });
+    let created;
+    try {
+      created = await this.repo.create({
+        schoolName,
+        town: clean(input.town) || null,
+        region,
+        // An independent enquiry has no school and therefore no education
+        // stage. The old unconditional default filed every one of them as a
+        // secondary school, mislabelled all the way to the staff queue.
+        kind: input.kind ?? ClubKind.SCHOOL,
+        level:
+          (input.kind ?? ClubKind.SCHOOL) === ClubKind.INDEPENDENT
+            ? null
+            : (input.level ?? ClubLevel.SECONDARY),
+        sizeBand: clean(input.sizeBand) || null,
+        contactName,
+        contactRole: clean(input.contactRole) || null,
+        contactPhone,
+        contactEmail: email || null,
+        note: clean(input.note) || null,
+        wantsFrench: input.wantsFrench ?? false,
+      });
+    } catch (cause) {
+      /**
+       * A write that fails must not become a masked GraphQL error.
+       *
+       * It did, and it cost an afternoon: `kind` was added to this insert and
+       * deployed before `manual_apply_independent_clubs.sql` was applied, so
+       * every enquiry threw on a missing column. Yoga masked the reason as
+       * "Unexpected error.", ccaweb turns any GraphQL error into "the academy's
+       * server did not answer", and the result was a form that looked like it
+       * had a network problem for everyone, with nothing in any log naming the
+       * column.
+       *
+       * So: log the real cause where an operator can find it, and answer with a
+       * code the client can tell apart from a dead socket. The enquirer is told
+       * their details were not saved rather than being shown a success they did
+       * not get.
+       */
+      console.error(
+        "[enquiry] create failed:",
+        cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause),
+      );
+      return {
+        ok: false,
+        id: null,
+        code: "ERROR",
+        message:
+          "Your enquiry could not be saved. This is our fault, not yours — please try again, or call the academy.",
+      };
+    }
 
     return { ok: true, id: created.id, code: "OK", message: THANKS };
   }

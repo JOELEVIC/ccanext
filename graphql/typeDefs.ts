@@ -388,6 +388,9 @@ export const typeDefs = `#graphql
   }
 
   type Query {
+  """The board behind one shared challenge. Public."""
+  challengeBoard(scenarioId: String!, limit: Int): ChallengeBoardView!
+
     me: User
     user(id: ID!): User
     users(filters: UserFilters): [User!]!
@@ -477,7 +480,46 @@ export const typeDefs = `#graphql
     mate: Int
   }
 
-  type Mutation {
+  input ChallengeResultInput {
+  scenarioId: String!
+  """Public display text chosen by the player. Never a real name."""
+  handle: String!
+  botId: String!
+  positionSlug: String
+  colour: String!
+  clockId: String
+  startFen: String!
+  """SAN, space-separated, from startFen."""
+  movesSAN: String!
+  """won | lost | drew, from the submitter's side."""
+  outcome: String!
+}
+
+type ChallengeResultAnswer {
+  ok: Boolean!
+  code: String!
+  id: ID!
+  """True when replaying the moves proved the result."""
+  verified: Boolean!
+  message: String!
+}
+
+type ChallengeBoardRow {
+  handle: String!
+  moves: Int!
+  createdAt: DateTime!
+}
+
+type ChallengeBoardView {
+  scenarioId: String!
+  """Verified wins, fewest moves first."""
+  wins: [ChallengeBoardRow!]!
+  """Everyone who posted anything, verified or not."""
+  attempts: Int!
+  winCount: Int!
+}
+
+type Mutation {
     register(input: RegisterInput!): AuthPayload!
     login(input: LoginInput!): AuthPayload!
     "Sign in or sign up with a Google ID token from Google Identity Services."
@@ -1457,6 +1499,14 @@ export const typeDefs = `#graphql
   extend type Mutation {
     "Public and rate-limited: IP + phone throttle backed by a table, plus the honeypot above."
     submitSchoolEnquiry(input: SchoolEnquiryInput!): SchoolEnquiryResult!
+
+    """
+    Post a result against a shared challenge. Public and unauthenticated —
+    whoever plays a forwarded link has no account. The only thing stored about
+    them is the handle they type; the game is replayed server-side before the
+    row is written.
+    """
+    submitChallengeResult(input: ChallengeResultInput!): ChallengeResultAnswer!
     "Staff only — moves an enquiry along the intake pipeline."
     adminUpdateSchoolEnquiryStatus(id: ID!, status: EnquiryStatus!): SchoolEnquiry!
   }

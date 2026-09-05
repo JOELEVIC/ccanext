@@ -8,6 +8,7 @@ import { schoolResolvers } from "./school.resolvers";
 import { chessProResolvers } from "./chessPro.resolvers";
 import { engineResolvers } from "./engine.resolvers";
 import { challengeResolvers } from "./challenge.resolvers";
+import { challengeBoardResolvers } from "./challengeBoard.resolvers";
 import { placementResolvers } from "./placement.resolvers";
 import { adminResolvers } from "./admin.resolvers";
 import { activityResolvers } from "./activity.resolvers";
@@ -47,6 +48,7 @@ export const resolvers = {
     ...chessProResolvers.Query,
     ...engineResolvers.Query,
     ...challengeResolvers.Query,
+    ...challengeBoardResolvers.Query,
     ...placementResolvers.Query,
     ...adminResolvers.Query,
     ...activityResolvers.Query,
@@ -66,6 +68,7 @@ export const resolvers = {
     ...ladderResolvers.Mutation,
     ...schoolResolvers.Mutation,
     ...challengeResolvers.Mutation,
+    ...challengeBoardResolvers.Mutation,
     ...placementResolvers.Mutation,
     ...adminResolvers.Mutation,
     ...activityResolvers.Mutation,

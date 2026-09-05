@@ -1403,3 +1403,67 @@ model EnquiryThrottle {
   @@index([windowStartedAt])
   @@map("enquiry_throttle")
 }
+
+/// A result somebody posted against a shared challenge.
+///
+/// The row is deliberately thin. Whoever submits this arrived from a message
+/// thread, has no account and has agreed to nothing, so the only thing stored
+/// about them is a HANDLE they chose — never a real name, never an email, and
+/// never anything that could identify a child. `BUILD_PLAN` §4.3 treats unknown
+/// age as a minor, and an anonymous submitter's age is unknown by definition.
+model ChallengeResult {
+  id String @id @default(uuid())
+
+  /// The contest. Hashed from bot, position, colour, clock and the starting
+  /// FEN by `lib/challenge` in the web app — see `scenarioId()` for why the
+  /// FEN is in it. Not a foreign key: a scenario is a computed identity, not
+  /// a row somebody created.
+  scenarioId String
+
+  /// Public display text, chosen by the submitter. Not a name.
+  handle String
+
+  /// White-first, like every other result in this schema (`§ notation rule`).
+  /// The submitter's own outcome is derived from this and `colour`, never
+  /// stored twice.
+  result GameResult
+  /// The colour the submitter played.
+  colour String
+
+  /// Full moves, as a person counts them.
+  moves    Int
+  /// True when replaying `movesSAN` reached a position that proves `result` —
+  /// a checkmate or a drawn ending. A resignation or a flag leaves no trace in
+  /// the moves and is recorded unverified rather than rejected.
+  verified Boolean @default(false)
+  /// The game itself, SAN, space-separated. Kept so a disputed row can be
+  /// re-checked, and so a board can show the game.
+  movesSAN String
+
+  /// The scenario as submitted, so a board can label itself without the web
+  /// app's catalogue and so `scenarioId` can be recomputed.
+  botId        String
+  positionSlug String?
+  clockId      String?
+  startFen     String
+
+  createdAt DateTime @default(now())
+
+  @@index([scenarioId, verified, moves])
+  @@index([createdAt])
+  @@map("challenge_results")
+}
+
+/// Rate limiting for the public result endpoint, mirroring `EnquiryThrottle`.
+/// Stores a SHA-256 digest, never a raw IP: the table's job is to say "too
+/// many", not to accumulate a log of who played.
+model ChallengeThrottle {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  count           Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+
+  @@index([windowStartedAt])
+  @@map("challenge_throttle")
+}

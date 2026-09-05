@@ -9,3 +9,7 @@ out
 
 # TypeScript incremental build cache — machine-local, changes on every build
 tsconfig.tsbuildinfo
+
+# Vercel CLI link metadata — machine-local, never committed.
+.vercel
+.env*

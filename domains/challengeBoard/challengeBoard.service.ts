@@ -116,6 +116,21 @@ export class ChallengeBoardService {
       return reject("VALIDATION", "Choose a handle of at least two characters.");
     }
 
+    /**
+     * The throttle comes BEFORE the replay, not after.
+     *
+     * It was the other way round and that was wrong. Verification is the
+     * expensive step — up to six hundred plies through chess.js — and a
+     * submission that fails it used to cost that work and count for nothing,
+     * so a flood of deliberately illegal games was unlimited and free. Every
+     * attempt is charged now, whether or not it turns out to be a real game.
+     *
+     * Forty a day is well beyond anyone playing honestly on one connection.
+     */
+    if (ip && !(await this.allow(sha256(ip)))) {
+      return reject("RATE_LIMITED", "That is a lot of results from one place today.");
+    }
+
     const colour = input.colour === "b" ? "b" : input.colour === "w" ? "w" : null;
     const outcome = ["won", "lost", "drew"].includes(input.outcome)
       ? (input.outcome as ClaimedOutcome)
@@ -147,10 +162,6 @@ export class ChallengeBoardService {
           ? "The moves do not end the way that result says."
           : "That game could not be replayed.",
       );
-    }
-
-    if (ip && !(await this.allow(sha256(ip)))) {
-      return reject("RATE_LIMITED", "That is a lot of results from one place today.");
     }
 
     // White-first, like every other result in this schema. The submitter's own

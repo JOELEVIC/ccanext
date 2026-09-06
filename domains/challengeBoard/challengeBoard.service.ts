@@ -205,12 +205,26 @@ export class ChallengeBoardService {
     }
   }
 
-  async board(scenarioId: string, limit = 20): Promise<ChallengeBoardView> {
+  /**
+   * One scenario's board.
+   *
+   * `since` exists so a page headed "today" cannot print an all-time board.
+   * The same position comes round again — the calendar is a rotation — and
+   * without a window, a daily page would silently show results from the last
+   * time it appeared, which is a lie told by a heading.
+   *
+   * It is a filter and nothing else: no new field is returned, no column and
+   * no index. `challenge_results_board_idx` leads on `scenarioId`, so this
+   * narrows a handful of rows already located by equality.
+   */
+  async board(scenarioId: string, limit = 20, since?: Date | null): Promise<ChallengeBoardView> {
     const take = Math.min(Math.max(limit, 1), 50);
+    const window = since ? { createdAt: { gte: since } } : {};
     const [rows, attempts, winCount] = await Promise.all([
       this.prisma.challengeResult.findMany({
         where: {
           scenarioId,
+          ...window,
           verified: true,
           // A win for the submitter is their colour taking the point.
           OR: [
@@ -222,10 +236,11 @@ export class ChallengeBoardService {
         take,
         select: { handle: true, moves: true, createdAt: true },
       }),
-      this.prisma.challengeResult.count({ where: { scenarioId } }),
+      this.prisma.challengeResult.count({ where: { scenarioId, ...window } }),
       this.prisma.challengeResult.count({
         where: {
           scenarioId,
+          ...window,
           verified: true,
           OR: [
             { result: GameResult.WHITE_WIN, colour: "w" },

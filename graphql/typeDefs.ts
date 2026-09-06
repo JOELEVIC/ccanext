@@ -389,7 +389,7 @@ export const typeDefs = `#graphql
 
   type Query {
   """The board behind one shared challenge. Public."""
-  challengeBoard(scenarioId: String!, limit: Int): ChallengeBoardView!
+  challengeBoard(scenarioId: String!, limit: Int, since: DateTime): ChallengeBoardView!
 
     me: User
     user(id: ID!): User

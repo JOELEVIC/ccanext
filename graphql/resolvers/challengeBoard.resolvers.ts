@@ -14,9 +14,9 @@ export const challengeBoardResolvers = {
   Query: {
     challengeBoard: (
       _: unknown,
-      args: { scenarioId: string; limit?: number | null },
+      args: { scenarioId: string; limit?: number | null; since?: Date | null },
       ctx: GraphQLContextWithServices,
-    ) => ctx.services.challengeBoardService.board(args.scenarioId, args.limit ?? 20),
+    ) => ctx.services.challengeBoardService.board(args.scenarioId, args.limit ?? 20, args.since ?? null),
   },
 
   Mutation: {

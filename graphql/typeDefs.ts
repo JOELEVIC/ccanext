@@ -498,7 +498,13 @@ export const typeDefs = `#graphql
 type ChallengeResultAnswer {
   ok: Boolean!
   code: String!
-  id: ID!
+  """
+  The stored row, or null when nothing was stored. Nullable on purpose: every
+  refusal path returns null, and while this was non-null a client selecting it
+  got a null data payload and an unexpected-error message instead of the
+  refusal message the service had carefully written.
+  """
+  id: ID
   """True when replaying the moves proved the result."""
   verified: Boolean!
   message: String!

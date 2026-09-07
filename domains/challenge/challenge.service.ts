@@ -19,10 +19,34 @@ export class ChallengeService {
     this.gameRepository = new GameRepository(prisma);
   }
 
+  /**
+   * ── `game` must load its players, and this is not a nicety ──────────────
+   *
+   * `Game.white` and `Game.black` are `User!` in the schema, and their
+   * resolvers are `parent.white` / `parent.black` — they read what Prisma
+   * loaded and do no fetching of their own. `game: true` loads the Game row
+   * WITHOUT those relations, so both come back `undefined`, which for a
+   * non-null field is an error graphql-yoga masks as "Unexpected error."
+   *
+   * The symptom was a challenge that had in fact been created: the mutation
+   * returned the row, the errors array was non-empty because one nested field
+   * threw, and every client treats a non-empty errors array as failure. So
+   * inviting somebody looked broken while working, and `myChallenges` — which
+   * the app polls — failed the same way on any screen that was open.
+   *
+   * `profile` and `school` ride along because `PublicPlayer` reduces a
+   * non-consented minor's name from the profile (§4.3); resolving a player
+   * without it would publish a name that must not be published.
+   */
   private include = {
     creator: { include: { profile: true } },
     opponent: { include: { profile: true } },
-    game: true,
+    game: {
+      include: {
+        white: { include: { profile: true, school: true } },
+        black: { include: { profile: true, school: true } },
+      },
+    },
   };
 
   async createChallenge(data: {

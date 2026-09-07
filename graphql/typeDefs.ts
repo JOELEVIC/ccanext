@@ -309,7 +309,18 @@ export const typeDefs = `#graphql
 
   input RegisterInput {
     email: String!
-    username: String!
+    """
+    Optional. Omit it and the server derives a free handle from the email
+    address, the same way loginWithGoogle always has.
+
+    Relaxing a required input field to nullable is a non-breaking schema change:
+    every client that sends one — ccaweb, ccaui, every APK already installed —
+    keeps working unchanged, and it is still validated (3–20 characters,
+    letters/numbers/underscore) when it is sent. What it removes is the app
+    having to ask a person who has not seen the product yet to invent a name,
+    and then reject it because a stranger already took it.
+    """
+    username: String
     password: String!
     role: UserRole!
     schoolId: ID

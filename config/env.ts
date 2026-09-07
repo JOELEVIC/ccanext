@@ -23,6 +23,24 @@ const envSchema = z.object({
   // Public Storage bucket that holds activity/event media (images).
   SUPABASE_MEDIA_BUCKET: z.string().default("activity-media"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  /**
+   * Comma-separated OAuth client ids whose Google ID tokens `loginWithGoogle`
+   * will accept as `aud`. Optional: unset, `domains/auth/googleVerify.ts` falls
+   * back to the single hardcoded web client, which is exactly how this API
+   * behaved before the list existed — so an existing deploy is unaffected.
+   *
+   * It exists because the platforms disagree about `aud`. Android puts the web
+   * client id there (it is what the app passes as `serverClientId`); iOS mints
+   * against the iOS client id and cannot sign in at all until that id is here.
+   *
+   * NOT a secret — every one of these ids ships inside a client binary. It is
+   * still the most dangerous variable in this file: every id listed must belong
+   * to the SAME Google Cloud project, because `aud` identifies the OAuth client
+   * that requested the token and nothing else. An id from an unrelated project
+   * turns that project's consent screen into a way of minting tokens this API
+   * accepts as identity. See the header of `parseAudienceAllowList`.
+   */
+  GOOGLE_CLIENT_IDS: z.string().optional(),
 });
 
 function parseEnv() {
@@ -68,4 +86,8 @@ export const config = {
     mediaBucket: env.SUPABASE_MEDIA_BUCKET,
   },
   cors: { origin: env.CORS_ORIGIN },
+  // Handed to `googleVerify.ts` as the raw string; the splitting, trimming and
+  // empty-entry rules live beside the audience check they protect rather than
+  // here, so there is one place to read when asking "what would this accept?".
+  google: { clientIds: env.GOOGLE_CLIENT_IDS },
 } as const;

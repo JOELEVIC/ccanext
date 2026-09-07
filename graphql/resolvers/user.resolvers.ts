@@ -76,17 +76,23 @@ export const userResolvers = {
       { input }: { input: Record<string, unknown> },
       context: GraphQLContextWithServices
     ) => {
-      const profileData =
-        input.firstName && input.lastName
-          ? {
-              firstName: input.firstName as string,
-              lastName: input.lastName as string,
-            }
-          : undefined;
+      // OR, not AND. `firstName && lastName` silently threw away a name that
+      // arrived in one half — which is not a rare shape: `ccaui`'s form lets a
+      // person fill the first box and skip the second, and there are people
+      // with one legal name. The account was then created with NO Profile row
+      // at all, and before `updateProfile` became an upsert that was permanent:
+      // the name they had typed was gone and there was no route to supply it
+      // again. Both columns are NOT NULL, so the half that was not sent is
+      // stored as "" — see the header of `UserService.updateProfile`.
+      const firstName = typeof input.firstName === "string" ? input.firstName.trim() : "";
+      const lastName = typeof input.lastName === "string" ? input.lastName.trim() : "";
+      const profileData = firstName || lastName ? { firstName, lastName } : undefined;
 
       const registered = await context.services.userService.createUser({
         email: input.email as string,
-        username: input.username as string,
+        // Now nullable in the SDL: absent, the service derives a free handle.
+        // Every shipped client still sends one and is unaffected.
+        username: input.username as string | undefined,
         password: input.password as string,
         role: input.role as UserRole,
         schoolId: input.schoolId as string | undefined,

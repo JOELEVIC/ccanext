@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, User } from "@prisma/client";
 import { UserRole, ClubStatus, MembershipRole, MembershipStatus } from "@prisma/client";
 import { UserRepository } from "./user.repository";
 import { verifyGoogleIdToken } from "@/domains/auth/googleVerify";
@@ -19,6 +19,25 @@ import { AuthenticationError, ValidationError, NotFoundError } from "@/utils/typ
 
 const SALT_ROUNDS = 12;
 
+/**
+ * The one spelling of an email address this API stores and matches on.
+ *
+ * `User.email` is `@unique` and Postgres compares strings case-sensitively, so
+ * before this existed `Brenda@school.cm` and `brenda@school.cm` were two rows,
+ * two ratings, two club memberships and — on a shared school handset — two
+ * Drift wipes. That was not hypothetical: `googleVerify` has always lowercased
+ * the address it reads out of the Google token, while `createUser` stored
+ * whatever the person typed. So somebody who registered with a capital letter
+ * and later tapped "Continue with Google" was silently handed a SECOND, empty
+ * account on their own mailbox, and no error appeared anywhere.
+ *
+ * Trim as well as lowercase: a trailing space survives a copy-paste out of a
+ * teacher's spreadsheet and is invisible in every UI that would show it.
+ */
+export function normaliseEmail(raw: string | null | undefined): string {
+  return (raw ?? "").trim().toLowerCase();
+}
+
 export class UserService {
   private userRepository: UserRepository;
 
@@ -26,21 +45,85 @@ export class UserService {
     this.userRepository = new UserRepository(prisma);
   }
 
+  /**
+   * Find one account by email address, case-insensitively, WITHOUT a data
+   * migration standing between this code and the rows already in production.
+   *
+   * `UserRepository.findByEmail` is a `findUnique` on a case-sensitive column.
+   * Every account written from here on carries a normalised address, so the
+   * unique index answers them exactly — that is the first lookup, and it is the
+   * one that runs for every account created after this ships. The second lookup
+   * exists purely for the mixed-case rows that predate normalisation, which
+   * cannot be fixed from here: rewriting `users.email` in place is a production
+   * data change, it needs a duplicate check first (two real accounts may already
+   * collapse onto one address), and a human has to decide which of the two
+   * survives. Until that cleanup runs, this method is what keeps those people
+   * signing in.
+   *
+   * The JavaScript re-check on the second lookup is not belt-and-braces, it is
+   * the correctness argument. Prisma compiles `mode: "insensitive"` to `ILIKE`
+   * on Postgres, and `ILIKE` reads `%` and `_` in the VALUE as wildcards — and
+   * `_` is an ordinary character in an email address. So `john_doe@x.cm` also
+   * matches `johnXdoe@x.cm`. Treating the query as a superset and then keeping
+   * only the rows whose normalised address is genuinely equal makes the result
+   * correct whether or not Prisma escapes, which is not a thing worth depending
+   * on a minor version for. Oldest row first so a pre-existing collision always
+   * resolves to the same account rather than to whichever one the planner
+   * returned today.
+   */
+  private async findUserByEmail(email: string): Promise<User | null> {
+    const normalised = normaliseEmail(email);
+
+    const exact = await this.prisma.user.findUnique({ where: { email: normalised } });
+    if (exact) return exact;
+    // An empty address still gets the exact lookup above — this endpoint does
+    // not validate email format at all, so "" is a value that can be in the
+    // column and a second registration of it must still read as "already in
+    // use" rather than as a raw constraint error. It does NOT get the scan
+    // below: `ILIKE ''` is a table read that can only ever return rows the
+    // exact lookup already refused.
+    if (!normalised) return null;
+
+    const candidates = await this.prisma.user.findMany({
+      where: { email: { equals: normalised, mode: "insensitive" } },
+      orderBy: { createdAt: "asc" },
+      take: 25,
+    });
+    return candidates.find((row) => normaliseEmail(row.email) === normalised) ?? null;
+  }
+
   async createUser(data: CreateUserDTO): Promise<AuthResponse> {
     // Usernames must be a single handle — no spaces — so they're typeable,
-    // @-mentionable, and safe to match (e.g. when seeding a tournament).
-    const username = (data.username ?? "").trim();
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+    // @-mentionable, and safe to match (e.g. when seeding a tournament). The
+    // rule applies to a username somebody CHOSE; an absent one is derived
+    // below and is free and valid by construction.
+    const chosenUsername = (data.username ?? "").trim();
+    if (chosenUsername && !/^[A-Za-z0-9_]{3,20}$/.test(chosenUsername)) {
       throw new ValidationError(
         "Username must be 3–20 characters — letters, numbers and underscores only (no spaces).",
       );
     }
 
-    const existingEmail = await this.userRepository.findByEmail(data.email);
+    const email = normaliseEmail(data.email);
+    const existingEmail = await this.findUserByEmail(email);
     if (existingEmail) throw new ValidationError("Email already in use");
 
-    const existingUsername = await this.userRepository.findByUsername(username);
-    if (existingUsername) throw new ValidationError("Username already in use");
+    // Derivation happens AFTER the duplicate-email check on purpose: somebody
+    // registering an address they already hold is the commonest failure on this
+    // endpoint, and `uniqueUsername` costs one SELECT per collision. There is no
+    // point probing for a free handle for an account that is about to be
+    // refused.
+    const username = chosenUsername || (await this.uniqueUsername(email));
+
+    // Only a CHOSEN username needs this. `uniqueUsername` has already proved its
+    // answer free, so re-asking would be a wasted round trip — and it would not
+    // close the race either way: two simultaneous registrations of the same
+    // handle are separated by the unique index, not by this check. What this
+    // check buys is the sentence, instead of a Prisma constraint error.
+    if (chosenUsername) {
+      const existingUsername = await this.userRepository.findByUsername(username);
+      if (existingUsername) throw new ValidationError("Username already in use");
+    }
 
     // A join code is resolved BEFORE the account exists: a typo must fail the
     // registration outright rather than leave someone signed up but attached to
@@ -60,7 +143,9 @@ export class UserService {
     const passwordHash = bcrypt.hashSync(data.password, SALT_ROUNDS);
 
     const user = await this.userRepository.create({
-      email: data.email,
+      // Normalised, never the raw string: this is the write half of the pair
+      // that stops one mailbox becoming two accounts. See `normaliseEmail`.
+      email,
       username,
       passwordHash,
       role: data.role,
@@ -121,7 +206,9 @@ export class UserService {
   }
 
   async authenticateUser(data: LoginDTO): Promise<AuthResponse> {
-    const user = await this.userRepository.findByEmail(data.email);
+    // Case-insensitive, so the address the person types on a phone keyboard
+    // that capitalises the first letter still finds the row they registered.
+    const user = await this.findUserByEmail(data.email);
     if (!user) throw new AuthenticationError("Invalid email or password");
 
     const isPasswordValid = bcrypt.compareSync(
@@ -157,12 +244,17 @@ export class UserService {
     const profile = await verifyGoogleIdToken(idToken);
     if (!profile) throw new AuthenticationError("Google sign-in failed. Please try again.");
 
-    let user = await this.userRepository.findByEmail(profile.email);
+    // `verifyGoogleIdToken` already lowercases, and this normalises again — not
+    // redundantly: this is the lookup that has to see the same address the
+    // password path wrote, and routing both through one helper is what makes
+    // "the same person" mean the same thing on both paths.
+    const email = normaliseEmail(profile.email);
+    let user = await this.findUserByEmail(email);
     if (!user) {
-      const username = await this.uniqueUsername(profile.email, profile.name);
+      const username = await this.uniqueUsername(email, profile.name);
       // No password login for Google accounts — store a random, unguessable hash.
       const passwordHash = bcrypt.hashSync(
-        `google:${profile.email}:${Date.now()}:${Math.random()}`,
+        `google:${email}:${Date.now()}:${Math.random()}`,
         SALT_ROUNDS,
       );
       const parts = (profile.name ?? "").trim().split(/\s+/).filter(Boolean);
@@ -170,7 +262,7 @@ export class UserService {
         ? { firstName: parts[0], lastName: parts.slice(1).join(" ") || parts[0] }
         : undefined;
       user = await this.userRepository.create({
-        email: profile.email,
+        email,
         username,
         passwordHash,
         role: UserRole.STUDENT,
@@ -196,11 +288,22 @@ export class UserService {
   }
 
   /**
-   * A free, valid username derived from a Google email/name. Separators become
+   * A free, valid username derived from an email/name. Separators become
    * underscores (not deleted) and a number is appended until it's free:
    *   "john.doe@gmail.com"            -> "john_doe"
    *   "albert.einstein@…" (taken)     -> "albert_einstein2", "…3", …
    * The result always satisfies the username rule (3–20, [A-Za-z0-9_]).
+   *
+   * Written for Google sign-in and now serving password signup too, which is
+   * why it is called from `createUser`. Nothing about its visibility had to
+   * change for that: TypeScript's `private` restricts callers OUTSIDE the
+   * class, and `createUser` is inside it.
+   *
+   * It probes rather than reserves, so the handle it returns is free at the
+   * moment it answers and not a millisecond later. Two registrations racing on
+   * the same email local-part are separated by the `@unique` index on
+   * `users.username`, which surfaces as a Prisma error rather than as a
+   * sentence — rare enough to accept, and cheaper than a reservation table.
    */
   private async uniqueUsername(email: string, name?: string): Promise<string> {
     let base = (email.split("@")[0] || name || "player")
@@ -242,8 +345,16 @@ export class UserService {
     const user = await this.userRepository.findById(id);
     if (!user) throw new NotFoundError("User not found");
 
-    if (data.email && data.email !== user.email) {
-      const existingEmail = await this.userRepository.findByEmail(data.email);
+    // Normalise before comparing AND before writing. Comparing the raw string
+    // against the stored one made "change your address to the same address in
+    // different capitals" look like a change, and then wrote a second spelling
+    // of the person's own mailbox into the column the whole auth path matches
+    // on. `undefined` stays `undefined` — an update that does not mention email
+    // must not blank it.
+    const email = data.email === undefined ? undefined : normaliseEmail(data.email);
+
+    if (email && email !== normaliseEmail(user.email)) {
+      const existingEmail = await this.findUserByEmail(email);
       if (existingEmail) throw new ValidationError("Email already in use");
     }
 
@@ -255,14 +366,53 @@ export class UserService {
         throw new ValidationError("Username already in use");
     }
 
-    return this.userRepository.update(id, data);
+    return this.userRepository.update(id, { ...data, ...(email !== undefined ? { email } : {}) });
   }
 
+  /**
+   * Write a person's name onto their account — CREATING the Profile row if the
+   * account has never had one.
+   *
+   * It used to throw `NotFoundError("User profile not found")` in that case,
+   * and that was defensible only while every account was born with a profile.
+   * It no longer is. A Profile row is created by `UserRepository.create` only
+   * when the caller passes `profile`, so it is absent for every account made by
+   * the two-field signup (email + password, no name asked), and absent for a
+   * Google account whose Google name is a single word or empty. Those are
+   * precisely the accounts the app then asks for a name — on the club-join
+   * screen, at the moment a patron is about to look for the person on a roster.
+   * Left as an update, that request could never succeed: the person would be
+   * told to enter their name, enter it, and be refused forever, with no way in
+   * the product to ever acquire the row that would let them try.
+   *
+   * `firstName` and `lastName` are NOT NULL on `profiles` with no default, so
+   * the create branch supplies `""` for whichever half was not sent. An empty
+   * string is the honest value — it says "we do not know this yet" — and it is
+   * what the roster and team-sheet fallbacks (S5) are written against. It is
+   * not a hole this method should paper over by refusing the write.
+   *
+   * `country` is left out of the create branch entirely when unsent so the
+   * column default ("CM") applies rather than being overwritten with undefined.
+   *
+   * Straight to Prisma rather than through `UserRepository.updateProfile`
+   * because that method is a bare `profile.update` and the repository is owned
+   * elsewhere this cycle; the upsert belongs with the rule it enforces anyway.
+   */
   async updateProfile(userId: string, data: UpdateProfileDTO) {
     const user = await this.userRepository.findById(userId);
     if (!user) throw new NotFoundError("User not found");
-    if (!user.profile) throw new NotFoundError("User profile not found");
-    return this.userRepository.updateProfile(userId, data);
+
+    return this.prisma.profile.upsert({
+      where: { userId },
+      update: data,
+      create: {
+        userId,
+        firstName: data.firstName ?? "",
+        lastName: data.lastName ?? "",
+        ...(data.dateOfBirth !== undefined ? { dateOfBirth: data.dateOfBirth } : {}),
+        ...(data.country !== undefined ? { country: data.country } : {}),
+      },
+    });
   }
 
   async updateUserRating(userId: string, newRating: number) {

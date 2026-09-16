@@ -90,3 +90,47 @@ export async function applyPairRating(
     ...((args.extraWrites ?? []) as never[]),
   ]);
 }
+
+/**
+ * The deviation a house player is rated AS — never rated to.
+ *
+ * Glicko weights an opponent by how certain its rating is. A house player's
+ * rating is a fixed number the platform chose, which is the most certain a
+ * rating can be; but a deviation of zero would make every game against one
+ * carry maximum weight, and these are engine games. 60 is an established,
+ * regularly-active player: a solid opponent, not an oracle.
+ */
+export const HOUSE_BOT_RD = 60;
+
+/**
+ * Rate one decided game for ONE player, against an opponent whose rating
+ * does not move.
+ *
+ * For games against a house player. The human's row is updated exactly as
+ * `applyPairRating` would update it — same formula, same opponent-state
+ * argument — and the house player's row is not touched: no `PlayerRating`
+ * upsert, no `users.rating` write. A bot whose rating drifted with its
+ * results would not be the opponent its card says it is.
+ */
+export async function applySoloRating(
+  prisma: PrismaClient,
+  args: {
+    userId: string;
+    /** `users.rating`, the seed used when the player has no `PlayerRating` yet. */
+    fallbackRating: number;
+    /** The fixed opponent, as a Glicko state. */
+    opponent: GlickoState;
+    /** From this player's point of view. */
+    score: WhiteScore;
+  }
+): Promise<void> {
+  const state = await getOrInitRating(prisma, args.userId, args.fallbackRating);
+  const next = glicko2Update(state, args.opponent, args.score);
+  await prisma.$transaction([
+    upsertRating(prisma, args.userId, next),
+    prisma.user.update({
+      where: { id: args.userId },
+      data: { rating: toDisplayRating(next.rating) },
+    }),
+  ]);
+}

@@ -85,6 +85,11 @@ export const resolvers = {
   Profile: userResolvers.Profile,
   UserVariantRating: userResolvers.UserVariantRating,
   Game: gameResolvers.Game,
+  // `creatorPlayer` / `opponentPlayer` — the consent-reduced people on a
+  // challenge. A type resolver that is not listed here is silently a default
+  // resolver, and a non-null field it was meant to serve becomes "Unexpected
+  // error." on every client; `challengePlayers.test.ts` pins this line.
+  Challenge: challengeResolvers.Challenge,
   Tournament: tournamentResolvers.Tournament,
   TournamentParticipant: tournamentResolvers.TournamentParticipant,
   School: schoolResolvers.School,

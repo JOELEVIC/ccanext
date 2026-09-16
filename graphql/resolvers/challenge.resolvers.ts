@@ -102,4 +102,34 @@ export const challengeResolvers = {
       );
     },
   },
+
+  Challenge: {
+    /**
+     * Through `toPublicPlayer()` like every other public name (§4.3). One
+     * lookup per challenge rather than a wider include: a person has a
+     * handful of challenges at a time, and the alternative is threading the
+     * public-player select through every challenge query for a field two
+     * screens read.
+     */
+    creatorPlayer: async (
+      challenge: { creatorId: string },
+      _: unknown,
+      context: GraphQLContextWithServices
+    ) => {
+      const player = await context.services.userService.getPublicPlayer(
+        challenge.creatorId
+      );
+      if (!player) throw new GraphQLError("Challenge creator no longer exists");
+      return player;
+    },
+
+    opponentPlayer: async (
+      challenge: { opponentId: string | null },
+      _: unknown,
+      context: GraphQLContextWithServices
+    ) => {
+      if (!challenge.opponentId) return null;
+      return context.services.userService.getPublicPlayer(challenge.opponentId);
+    },
+  },
 };

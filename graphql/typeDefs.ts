@@ -159,6 +159,14 @@ export const typeDefs = `#graphql
     creator: User!
     "Null for an open invite link that anyone signed-in can accept."
     opponent: User
+    """
+    The two people as the public sees them — consent-reduced names, the
+    avatar when it may be shown. A client rendering a challenge from somebody
+    it has not met (an incoming banner) reads these and never re-derives a
+    name from \`creator.username\`, which is not a name.
+    """
+    creatorPlayer: PublicPlayer!
+    opponentPlayer: PublicPlayer
     creatorColor: String!
     timeControl: String!
     rated: Boolean!

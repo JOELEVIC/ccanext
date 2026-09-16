@@ -2064,43 +2064,6 @@ type Mutation {
     recordLadderExam(input: LadderExamInput!): LadderProgress!
   }
 
-  # ── House players ─────────────────────────────────────────────────────────
-  #
-  # Accounts the platform plays itself when nobody else will. The cca game
-  # server is the only caller of these two operations; both are gated by
-  # HOUSE_BOT_SECRET and neither reads the viewer. See
-  # domains/houseBot/houseBot.service.ts.
 
-  "A house player as the game server sees it."
-  type HouseBot {
-    id: ID!
-    username: String!
-    rating: Int!
-  }
-
-  type HouseBotPoll {
-    bots: [HouseBot!]!
-    "Open seeks posted by humans, oldest first."
-    seeks: [Challenge!]!
-    "Open challenges humans have addressed to a house player, oldest first."
-    direct: [Challenge!]!
-    "PENDING or ACTIVE games involving a house player - lets a restarted server adopt or void them."
-    activeGames: [Game!]!
-  }
-
-  extend type Query {
-    "Everything the house-player loop needs per tick. Refused without the secret."
-    houseBotPoll(secret: String!): HouseBotPoll!
-  }
-
-  extend type Mutation {
-    """
-    An ordinary player session for one house player. Refused without the
-    secret, and refused for any account not flagged as a house player. The
-    token is a normal player JWT, so acceptChallenge and recordGameResult
-    work unchanged.
-    """
-    houseBotSession(userId: ID!, secret: String!): AuthPayload!
-  }
 
 `;

@@ -41,14 +41,6 @@ const envSchema = z.object({
    * accepts as identity. See the header of `parseAudienceAllowList`.
    */
   GOOGLE_CLIENT_IDS: z.string().optional(),
-  /**
-   * Shared with the cca game server, which uses it to mint player sessions
-   * for the house players and to poll for seeks nobody has taken. Unset, both
-   * operations refuse — the house players simply do not exist. At least 32
-   * characters, like every other secret here; it is a bearer credential for
-   * accounts that can accept challenges and record game results.
-   */
-  HOUSE_BOT_SECRET: z.string().min(32).optional(),
 });
 
 function parseEnv() {
@@ -98,5 +90,4 @@ export const config = {
   // empty-entry rules live beside the audience check they protect rather than
   // here, so there is one place to read when asking "what would this accept?".
   google: { clientIds: env.GOOGLE_CLIENT_IDS },
-  houseBot: { secret: env.HOUSE_BOT_SECRET },
 } as const;

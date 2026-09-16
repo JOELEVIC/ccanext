@@ -11,7 +11,6 @@ import { challengeResolvers } from "./challenge.resolvers";
 import { challengeBoardResolvers } from "./challengeBoard.resolvers";
 import { placementResolvers } from "./placement.resolvers";
 import { adminResolvers } from "./admin.resolvers";
-import { houseBotResolvers } from "./houseBot.resolvers";
 import { activityResolvers } from "./activity.resolvers";
 import { tournamentRoundResolvers } from "./tournamentRound.resolvers";
 import { clubResolvers } from "./club.resolvers";
@@ -52,7 +51,6 @@ export const resolvers = {
     ...challengeBoardResolvers.Query,
     ...placementResolvers.Query,
     ...adminResolvers.Query,
-    ...houseBotResolvers.Query,
     ...activityResolvers.Query,
     ...tournamentRoundResolvers.Query,
     ...clubResolvers.Query,
@@ -73,7 +71,6 @@ export const resolvers = {
     ...challengeBoardResolvers.Mutation,
     ...placementResolvers.Mutation,
     ...adminResolvers.Mutation,
-    ...houseBotResolvers.Mutation,
     ...activityResolvers.Mutation,
     ...tournamentRoundResolvers.Mutation,
     ...enquiryResolvers.Mutation,

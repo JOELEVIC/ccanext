@@ -39,9 +39,6 @@ export const chessProResolvers = {
     ) => {
       const take = Math.min(Math.max(limit ?? 25, 1), 100);
       const users = await context.prisma.user.findMany({
-        // A leaderboard is a list of people. A house player on it would be
-        // a fixed number sitting above every student it was made to lose to.
-        where: { isHouseBot: false },
         orderBy: { rating: "desc" },
         take,
         include: { profile: true },
@@ -71,10 +68,7 @@ export const chessProResolvers = {
     },
 
     ratingDistribution: async (_: unknown, __: unknown, context: GraphQLContextWithServices) => {
-      const users = await context.prisma.user.findMany({
-        where: { isHouseBot: false },
-        select: { rating: true },
-      });
+      const users = await context.prisma.user.findMany({ select: { rating: true } });
       const bucketSize = 200;
       const buckets = new Map<number, number>();
       for (const u of users) {

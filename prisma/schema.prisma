@@ -49,14 +49,6 @@ model User {
   placementRequired    Boolean   @default(true)
   placementCompletedAt DateTime?
 
-  // A house player: an account the platform operates itself. The live game
-  // server plays it with an engine when no human takes a seek. It never seeks,
-  // its rating is fixed (Glicko skips it), and its password is unusable.
-  // A real column rather than a naming convention, because "sample-" prefixes
-  // are already spoken for and a bot that can be mistaken for a person by a
-  // resolver is a bot that ends up on a leaderboard.
-  isHouseBot Boolean @default(false)
-
   // Club / competition domain (BUILD_PLAN §3.2). `publicNameMode` may only be
   // set to FULL when this user's GuardianConsent is GRANTED — see §4.3.
   publicNameMode  PublicNameMode      @default(INITIAL)
@@ -70,7 +62,6 @@ model User {
   @@index([email])
   @@index([username])
   @@index([schoolId])
-  @@index([isHouseBot])
   @@map("users")
 }
 

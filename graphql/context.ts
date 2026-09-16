@@ -1,3 +1,4 @@
+import { config } from "@/config/env";
 import type { UserService } from "@/domains/user/user.service";
 import type { GameService } from "@/domains/game/game.service";
 import type { TournamentService } from "@/domains/tournament/tournament.service";
@@ -5,6 +6,7 @@ import type { LearningService } from "@/domains/learning/learning.service";
 import type { LadderService } from "@/domains/learning/ladder.service";
 import type { InstitutionService } from "@/domains/institution/institution.service";
 import type { ChallengeService } from "@/domains/challenge/challenge.service";
+import { HouseBotService } from "@/domains/houseBot/houseBot.service";
 import type { ChallengeBoardService } from "@/domains/challengeBoard/challengeBoard.service";
 import type { PlacementService } from "@/domains/placement/placement.service";
 import type { AdminService } from "@/domains/admin/admin.service";
@@ -95,6 +97,7 @@ export interface GraphQLContextWithServices {
     ladderService: LadderService;
     institutionService: InstitutionService;
     challengeService: ChallengeService;
+    houseBotService: HouseBotService;
     challengeBoardService: ChallengeBoardService;
     placementService: PlacementService;
     adminService: AdminService;
@@ -153,6 +156,7 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
   // Self-serve club creation reads a platform switch to decide whether the
   // club it makes needs approving, so the two are constructed together.
   const platformSettings = new PlatformSettingServiceClass(prisma);
+  const challenges = new ChallengeServiceClass(prisma);
 
   return {
     user,
@@ -168,7 +172,8 @@ export async function buildContext(request: Request): Promise<GraphQLContextWith
       learningService: new LearningServiceClass(prisma),
       ladderService: new LadderServiceClass(prisma),
       institutionService: new InstitutionServiceClass(prisma),
-      challengeService: new ChallengeServiceClass(prisma),
+      challengeService: challenges,
+      houseBotService: new HouseBotService(prisma, challenges, { secret: config.houseBot.secret }),
       challengeBoardService: new ChallengeBoardServiceClass(prisma),
       placementService: new PlacementServiceClass(prisma),
       adminService: new AdminServiceClass(prisma),

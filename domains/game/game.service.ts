@@ -8,7 +8,8 @@ import {
   AuthorizationError,
 } from "@/utils/types";
 import { UserService } from "../user/user.service";
-import { applyPairRating, type WhiteScore } from "./ratingWrite";
+import { applyPairRating, applySoloRating, HOUSE_BOT_RD, type WhiteScore } from "./ratingWrite";
+import { DEFAULT_VOL } from "./glicko2";
 
 const XP_WIN = 20;
 const XP_DRAW = 10;
@@ -312,8 +313,8 @@ export class GameService {
     validationState?: string | null;
     whiteId: string;
     blackId: string;
-    white: { rating: number };
-    black: { rating: number };
+    white: { rating: number; isHouseBot?: boolean };
+    black: { rating: number; isHouseBot?: boolean };
   }) {
     if (!game.result) return;
     if (game.rated === false) return; // casual game — outcome recorded, ratings untouched
@@ -324,6 +325,31 @@ export class GameService {
 
     const whiteScore: WhiteScore =
       game.result === GameResult.WHITE_WIN ? 1 : game.result === GameResult.BLACK_WIN ? 0 : 0.5;
+
+    // ── House players are rated AGAINST, never rated ────────────────────
+    //
+    // A game against a house player is rated for the human — that is the
+    // point of one being there when nobody else is — and the house player's
+    // own rating stays exactly what the platform set it to. Two bots (which
+    // the loop never arranges, but the write must not depend on that) rate
+    // nobody.
+    const whiteBot = game.white.isHouseBot === true;
+    const blackBot = game.black.isHouseBot === true;
+    if (whiteBot && blackBot) return;
+    if (whiteBot || blackBot) {
+      const humanIsWhite = !whiteBot;
+      await applySoloRating(this.prisma, {
+        userId: humanIsWhite ? game.whiteId : game.blackId,
+        fallbackRating: humanIsWhite ? game.white.rating : game.black.rating,
+        opponent: {
+          rating: humanIsWhite ? game.black.rating : game.white.rating,
+          rd: HOUSE_BOT_RD,
+          vol: DEFAULT_VOL,
+        },
+        score: (humanIsWhite ? whiteScore : 1 - whiteScore) as WhiteScore,
+      });
+      return;
+    }
 
     // One writer for both rating paths — this one and fixture validation.
     // See `ratingWrite.ts` for why they must not be two implementations.

@@ -290,4 +290,38 @@ export class ChallengeService {
       take: 50,
     });
   }
+
+  /**
+   * What the house players may answer: every open seek a human has posted,
+   * and every open challenge a human has addressed to a house player.
+   *
+   * Deliberately WITHOUT `openChallenges`'s two pool filters. Those decide
+   * who may be challenged by a stranger — a student who opted out of the
+   * pool, a club that opted its children out. A seeker is not being
+   * challenged by anybody; they asked for a game, and the house is not a
+   * stranger. It also serves the accounts with no Profile row, which the
+   * `profile: { is: … }` filter makes invisible to the pool.
+   *
+   * Never a seek by a house player (they do not seek) and never a direct
+   * challenge from one — two bots playing each other is a game nobody is
+   * watching and nobody's rating should move for.
+   */
+  async openChallengesForHouseBots() {
+    const live = { status: ChallengeStatus.OPEN, NOT: { expiresAt: { lte: new Date() } } };
+    const [seeks, direct] = await Promise.all([
+      this.prisma.challenge.findMany({
+        where: { ...live, opponentId: null, creator: { isHouseBot: false } },
+        include: this.include,
+        orderBy: { createdAt: "asc" },
+        take: 50,
+      }),
+      this.prisma.challenge.findMany({
+        where: { ...live, opponent: { isHouseBot: true }, creator: { isHouseBot: false } },
+        include: this.include,
+        orderBy: { createdAt: "asc" },
+        take: 50,
+      }),
+    ]);
+    return { seeks, direct };
+  }
 }

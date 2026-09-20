@@ -52,6 +52,9 @@ export const challengeResolvers = {
           creatorColor: string;
           timeControl: string;
           rated: boolean;
+          startFen?: string | null;
+          positionSlug?: string | null;
+          viaLink?: boolean | null;
         };
       },
       context: GraphQLContextWithServices
@@ -63,18 +66,28 @@ export const challengeResolvers = {
         creatorColor: input.creatorColor,
         timeControl: input.timeControl,
         rated: input.rated,
+        startFen: input.startFen ?? null,
+        positionSlug: input.positionSlug ?? null,
+        viaLink: input.viaLink ?? false,
       });
     },
 
     acceptChallenge: async (
       _: unknown,
-      { challengeId }: { challengeId: string },
+      {
+        challengeId,
+        supportsStartFen,
+      }: { challengeId: string; supportsStartFen?: boolean | null },
       context: GraphQLContextWithServices
     ) => {
       const user = requireUser(context);
       return context.services.challengeService.acceptChallenge(
         challengeId,
-        user.userId
+        user.userId,
+        // Omitted means no. The conservative reading is the safe one: every
+        // client in the field today omits it, and none of them can render a
+        // game from an arbitrary position.
+        { supportsStartFen: supportsStartFen === true }
       );
     },
 

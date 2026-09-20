@@ -317,6 +317,13 @@ model Game {
   result          GameResult?
   status          GameStatus      @default(PENDING)
   timeControl     String // e.g., "10+0", "30+0"
+
+  /// The position this game started from. NULL is the standard start.
+  ///
+  /// `moves` is relative to it, so **the pair is the unit**: anything that
+  /// replays `moves` from a fresh board is wrong for a game that has one.
+  startFen        String?
+  positionSlug    String?
   rated           Boolean         @default(true) // false = casual: no rating change
   whiteRating     Int? // each player's rating snapshot when the game was created
   blackRating     Int?
@@ -370,6 +377,27 @@ model Challenge {
   timeControl  String
   rated        Boolean         @default(true)
   status       ChallengeStatus @default(OPEN)
+
+  /// The position the game starts from, as a full six-field FEN. NULL is the
+  /// standard start — see `domains/challenge/startPosition.ts` for why null
+  /// rather than a stored default.
+  startFen     String?
+
+  /// Display only. The famous-position slug from the app's catalogue, so a
+  /// client can print "the Immortal Game" without carrying all 76. NEVER used
+  /// to derive a position: `startFen` is the only authority for what is on the
+  /// board. Same shape as `ChallengeResult` below, which set the precedent.
+  positionSlug String?
+
+  /// True for a challenge that exists to back a shared link.
+  ///
+  /// It is the difference between "anybody may take this" and "whoever I sent
+  /// it to may take this", and without it the two are the same row: an open
+  /// challenge with a null `opponentId` is exactly what `openChallenges`
+  /// hands to the next stranger who taps Start, and what the house-bot poll
+  /// answers. A link would be eaten within one poll interval by somebody who
+  /// never asked for it.
+  viaLink      Boolean         @default(false)
   gameId       String?         @unique
   game         Game?           @relation(fields: [gameId], references: [id], onDelete: SetNull)
   expiresAt    DateTime?

@@ -92,6 +92,9 @@ export class GameRepository {
     timeControl: string;
     tournamentId?: string;
     rated?: boolean;
+    /// Validated upstream by `validateStartFen`. Null is the standard start.
+    startFen?: string | null;
+    positionSlug?: string | null;
   }) {
     // Snapshot each player's rating at creation so games-list rows can show the
     // rating you had at the time, not your (later) current rating.
@@ -106,6 +109,8 @@ export class GameRepository {
         timeControl: data.timeControl,
         tournamentId: data.tournamentId,
         rated: data.rated ?? true,
+        startFen: data.startFen ?? null,
+        positionSlug: data.positionSlug ?? null,
         whiteRating: w?.rating ?? null,
         blackRating: b?.rating ?? null,
         moves: "",

@@ -10,6 +10,7 @@ import {
 import { UserService } from "../user/user.service";
 import { applyPairRating, applySoloRating, HOUSE_BOT_RD, type WhiteScore } from "./ratingWrite";
 import { DEFAULT_VOL } from "./glicko2";
+import { startTurn } from "../challenge/startPosition";
 
 const XP_WIN = 20;
 const XP_DRAW = 10;
@@ -100,7 +101,11 @@ export class GameService {
       throw new ValidationError("Game is not active");
 
     const moves = game.moves ? game.moves.split(" ").filter(Boolean) : [];
-    const isWhiteTurn = moves.length % 2 === 0;
+    // Parity alone is only "white to move" when the game began from the
+    // standard start. From a black-to-move position it is inverted, and this
+    // check would refuse the correct player's move.
+    const isWhiteTurn =
+      (moves.length % 2 === 0) === (startTurn(game.startFen) === "w");
 
     if (isWhiteTurn && data.userId !== game.whiteId)
       throw new AuthorizationError("Not white's turn");

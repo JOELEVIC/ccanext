@@ -144,6 +144,14 @@ export const typeDefs = `#graphql
     tournament: Tournament
     createdAt: DateTime!
     updatedAt: DateTime!
+    """
+    The position this game started from. Null is the standard start.
+
+    \`moves\` is relative to it, so the pair is the unit: anything replaying
+    \`moves\` from a fresh board is wrong for a game that has one.
+    """
+    startFen: String
+    positionSlug: String
   }
 
   enum ChallengeStatus {
@@ -174,6 +182,12 @@ export const typeDefs = `#graphql
     game: Game
     expiresAt: DateTime
     createdAt: DateTime!
+    "The position to start from, a full six-field FEN. Null is the standard start."
+    startFen: String
+    "Display label only. Never used to derive the position."
+    positionSlug: String
+    "True for a challenge backing a shared link, which the open pool never offers."
+    viaLink: Boolean!
   }
 
   input CreateChallengeInput {
@@ -182,6 +196,24 @@ export const typeDefs = `#graphql
     creatorColor: String!
     timeControl: String!
     rated: Boolean!
+    """
+    Full six-field FEN to start from. Omit for the standard start.
+
+    A game from a set position is always casual — \`rated\` is forced false when
+    this is present, server-side, because a rating change from the Immortal
+    Game's move 18 would measure who was handed which side. And
+    \`creatorColor: "random"\` is refused with it: a link whose point is "play
+    Morphy's side against me" must not coin-flip which side that is.
+    """
+    startFen: String
+    "Display label only. Never used to derive the position."
+    positionSlug: String
+    """
+    Create this challenge to back a shared link rather than to sit in the open
+    pool. A link challenge is never dealt to a stranger who tapped Start, and
+    is never answered by a house bot.
+    """
+    viaLink: Boolean
   }
 
   type Tournament {
@@ -584,8 +616,17 @@ type Mutation {
 
     "Create a challenge — direct (with opponentId) or an open invite link."
     createChallenge(input: CreateChallengeInput!): Challenge!
-    "Accept an open challenge: creates the game and returns it."
-    acceptChallenge(challengeId: ID!): Game!
+    """
+    Accept an open challenge: creates the game and returns it.
+
+    Pass \`supportsStartFen: true\` only from a client that can render a game
+    from an arbitrary position. It is a capability declaration because there
+    is no other way to make one: no request carries a client version, and a
+    build that renders an online board by replaying from the standard start
+    would show the wrong pieces and have every move refused. Omitted means no,
+    and a position challenge is then declined with a message saying to update.
+    """
+    acceptChallenge(challengeId: ID!, supportsStartFen: Boolean): Game!
     declineChallenge(challengeId: ID!): Challenge!
     cancelChallenge(challengeId: ID!): Challenge!
 

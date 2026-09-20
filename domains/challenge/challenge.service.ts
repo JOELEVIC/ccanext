@@ -6,9 +6,19 @@ import {
   AuthorizationError,
 } from "@/utils/types";
 import { GameRepository } from "../game/game.repository";
+import { validateStartFen } from "./startPosition";
 
 /** Open challenges auto-expire after this long. */
 const CHALLENGE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A link lives longer than a seek.
+ *
+ * A day is right for an invitation sitting in a pool waiting to be matched.
+ * It is wrong for a link sent over WhatsApp on a Friday night, where the
+ * person it was sent to may not open their phone until Sunday.
+ */
+const LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const COLORS = ["white", "black", "random"] as const;
 
@@ -55,6 +65,9 @@ export class ChallengeService {
     creatorColor: string;
     timeControl: string;
     rated: boolean;
+    startFen?: string | null;
+    positionSlug?: string | null;
+    viaLink?: boolean | null;
   }) {
     const color = (COLORS as readonly string[]).includes(data.creatorColor)
       ? data.creatorColor
@@ -64,6 +77,39 @@ export class ChallengeService {
       throw new ValidationError(
         'Invalid time control. Use format: "minutes+increment"'
       );
+
+    // ── The position, checked before anything is written ──────────────────
+    //
+    // This is the real gate: a FEN that fails here never becomes a Challenge
+    // row and so never becomes a Game row, and nothing downstream can meet
+    // one. `acceptChallenge` deliberately does not re-validate — it copies a
+    // position that was already checked, and re-checking would let a
+    // catalogue correction make an accepted challenge unacceptable.
+    const position = validateStartFen(data.startFen);
+    if (!position.ok) throw new ValidationError(position.reason);
+    const startFen = position.fen;
+
+    // A shared position has a side, and it must not be coin-flipped. "random"
+    // resolves with `Math.random()` — at creation for a direct challenge and
+    // again at accept time for an open one — so a link whose whole point is
+    // "play Morphy's side against me" would deal either side, and the sender
+    // could not see which they had sent.
+    if (startFen && color === "random") {
+      throw new ValidationError(
+        "A challenge from a set position must name a colour."
+      );
+    }
+
+    // ── A game from a position is never rated ─────────────────────────────
+    //
+    // A Glicko result is a claim about playing strength, and it is only that
+    // claim if both players started equal. From the Immortal Game's move 18
+    // White is winning by force, so the rating change would measure who was
+    // handed which side. Decided here rather than trusted from the client:
+    // `rated` is a client-supplied boolean, and somebody eventually ships one
+    // that sends `true` with a winning position.
+    const rated = startFen ? false : data.rated;
+    const viaLink = data.viaLink === true;
 
     let gameId: string | null = null;
 
@@ -99,7 +145,9 @@ export class ChallengeService {
         whiteId,
         blackId,
         timeControl: data.timeControl,
-        rated: data.rated,
+        rated,
+        startFen,
+        positionSlug: data.positionSlug ?? null,
       });
       gameId = game.id;
     }
@@ -110,9 +158,14 @@ export class ChallengeService {
         opponentId: data.opponentId ?? null,
         creatorColor: color,
         timeControl: data.timeControl,
-        rated: data.rated,
+        rated,
+        startFen,
+        positionSlug: data.positionSlug ?? null,
+        viaLink,
         status: ChallengeStatus.OPEN,
-        expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),
+        expiresAt: new Date(
+          Date.now() + (viaLink ? LINK_TTL_MS : CHALLENGE_TTL_MS)
+        ),
         gameId,
       },
       include: this.include,
@@ -120,7 +173,11 @@ export class ChallengeService {
   }
 
   /** Accept an open challenge: create the game (colors resolved), link it, return the game. */
-  async acceptChallenge(challengeId: string, userId: string) {
+  async acceptChallenge(
+    challengeId: string,
+    userId: string,
+    opts?: { supportsStartFen?: boolean }
+  ) {
     const ch = await this.prisma.challenge.findUnique({
       where: { id: challengeId },
     });
@@ -144,6 +201,25 @@ export class ChallengeService {
     if (ch.opponentId && ch.opponentId !== userId)
       throw new AuthorizationError("This challenge isn't addressed to you");
 
+    // ── The only gate that stops an old client entering a position game ───
+    //
+    // Nothing in a request carries a client version, and a build that renders
+    // an online board by replaying from the standard start would show the
+    // wrong pieces and have every move it sent refused as illegal. Additive
+    // GraphQL does not prevent that, because the break is in rendering rather
+    // than in the protocol — so the client has to say what it can do.
+    //
+    // This one place is sufficient because every route into a game passes
+    // through it. A direct challenge creates its Game up front and drops the
+    // CREATOR in, but the creator of a position challenge is necessarily on a
+    // new client, since only a new client can set a FEN. The opponent always
+    // arrives here.
+    if (ch.startFen && opts?.supportsStartFen !== true) {
+      throw new ValidationError(
+        "This game starts from a set position. Update the app to play it."
+      );
+    }
+
     // Direct challenges already have a PENDING game with both players assigned —
     // just join it. Open invites have no game yet, so create it now.
     let gameId = ch.gameId;
@@ -161,6 +237,8 @@ export class ChallengeService {
         blackId,
         timeControl: ch.timeControl,
         rated: ch.rated,
+        startFen: ch.startFen,
+        positionSlug: ch.positionSlug,
       });
       gameId = game.id;
     }
@@ -277,6 +355,14 @@ export class ChallengeService {
       where: {
         status: ChallengeStatus.OPEN,
         opponentId: null,
+        // ── A link is not a seek ────────────────────────────────────────
+        //
+        // Both are OPEN with a null opponent, and without this line they are
+        // the same row to this query: the next student who taps Start at this
+        // cadence would be handed somebody's WhatsApp challenge, the friend it
+        // was sent to would find it taken, and — if it carried a position —
+        // the stranger would be dealt a board they never asked for.
+        viaLink: false,
         ...(userId ? { creatorId: { not: userId } } : {}),
         ...(timeControl ? { timeControl } : {}),
         NOT: { expiresAt: { lte: new Date() } },
@@ -310,7 +396,16 @@ export class ChallengeService {
     const live = { status: ChallengeStatus.OPEN, NOT: { expiresAt: { lte: new Date() } } };
     const [seeks, direct] = await Promise.all([
       this.prisma.challenge.findMany({
-        where: { ...live, opponentId: null, creator: { isHouseBot: false } },
+        // `viaLink: false` for the same reason as `openChallenges`, and more
+        // urgently: the house bots poll this, so a link left unanswered for
+        // one interval would be taken by a machine rather than by the person
+        // it was sent to.
+        where: {
+          ...live,
+          opponentId: null,
+          viaLink: false,
+          creator: { isHouseBot: false },
+        },
         include: this.include,
         orderBy: { createdAt: "asc" },
         take: 50,

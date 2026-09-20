@@ -76,8 +76,12 @@ describe("what it refuses", () => {
     // The failure whose absence is worst: end detection only runs after a
     // move is applied, so a session started on mate is a board neither player
     // can move on, recorded thirty seconds later as "no move in time".
-    const mate = validateStartFen("7k/5QK1/8/8/8/8/8/8 b - - 0 1");
+    const mate = validateStartFen("7k/6Q1/5K2/8/8/8/8/8 b - - 0 1");
     expect(mate.ok).toBe(false);
+    // The reason, not just the refusal: the first version of this used a
+    // position whose kings were adjacent, so it passed on the check above and
+    // proved nothing about game-over detection.
+    if (!mate.ok) expect(mate.reason).toMatch(/finished/i);
 
     const stalemate = validateStartFen("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
     expect(stalemate.ok).toBe(false);
